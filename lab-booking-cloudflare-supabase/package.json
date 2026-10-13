@@ -1,0 +1,8 @@
+{
+  "name": "seo-lab-local-booking",
+  "version": "2.0.0",
+  "private": true,
+  "description": "로컬 연구실 장비 예약 — 외부 서비스와 의존 패키지 없음",
+  "engines": { "node": ">=22.13.0" },
+  "scripts": { "start": "node server.cjs", "test": "node --test tests/*.test.cjs", "build:cloud": "node scripts/build-cloud.cjs" }
+}

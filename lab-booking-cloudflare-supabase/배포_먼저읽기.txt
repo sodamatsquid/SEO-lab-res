@@ -1,0 +1,119 @@
+연구실 장비 예약 — GitHub + Cloudflare Pages + Supabase 배포 안내
+작성: 2026-10-13
+
+이 ZIP은 GitHub에 올릴 소스 파일 묶음입니다.
+Cloudflare의 파일 직접 업로드 화면에 ZIP을 넣는 방식이 아닙니다.
+Supabase 연결 주소와 공개 키를 설정한 뒤 Cloudflare가 화면 파일을 빌드합니다.
+실제 배포나 계정 연결은 아직 수행하지 않았습니다.
+
+포함: 홈페이지 코드, Supabase DB 설정 SQL, 초기 장비 32대, 실행·검증 자료.
+미포함: 이 PC의 실제 예약, SQLite DB, 비밀번호, 실제 서비스 키, 기존 백업 파일.
+온라인 첫 시작은 장비 32대와 빈 예약표입니다.
+현재 온라인 코드는 개인별 이메일·비밀번호 로그인 방식입니다.
+일반 구성원은 본인 예약 수정·취소, 관리자는 모든 예약과 장비를 관리하도록 작성했습니다.
+자동 백업·전체 변경 이력·삭제 복구 버튼은 이번 배포본에 포함되어 있지 않습니다.
+
+1. Supabase 데이터베이스 준비
+Supabase에서 예약 사이트 전용 새 프로젝트를 만드세요.
+기존 자료가 들어 있는 프로젝트 대신 별도 새 프로젝트에서 시작하세요.
+프로젝트의 SQL Editor에서 아래 파일 내용을 순서대로 붙여 넣고 실행합니다.
+  ① supabase/01_schema.sql — 예약·장비 저장 구조와 접근 권한 생성
+  ② supabase/02_initial_equipment.sql — 장비 32대 등록
+각 파일은 최초 1회만 실행합니다. 화면 코드를 수정할 때 다시 실행하지 마세요.
+첫 파일에서 오류가 나면 두 번째 파일 실행을 멈추고 오류 내용을 확인하세요.
+
+2. 첫 관리자 계정 만들기
+Supabase의 Authentication에서 이메일·비밀번호 로그인을 사용합니다.
+공개 회원 가입(Allow new users to sign up)은 끕니다.
+Users → Add user/Create new user에서 관리자 본인의 계정을 만듭니다.
+이메일 확인 상태도 확인하세요. 아래는 실제 회원의 계정 관리 작업입니다.
+사용자의 ID(UUID)를 복사하고 SQL Editor에서 다음 SQL을 실행합니다.
+'실제-사용자-UUID'를 복사한 UUID로 바꾸고 작은따옴표는 유지합니다.
+
+insert into public.lab_members(user_id,role)
+values ('실제-사용자-UUID','admin');
+
+다른 연구실 구성원도 계정을 만든 뒤 위 SQL의 role을 'member'로 등록합니다.
+계정을 만드는 것과 lab_members에 등록하는 것 두 단계가 모두 필요합니다.
+사이트 내부에는 회원 가입·승인·비밀번호 재설정 화면이 없습니다.
+
+3. GitHub에 파일 올리기
+ZIP을 먼저 압축 해제합니다.
+GitHub에서 이 사이트 전용 저장소(repository)를 만듭니다. Private로 만들어도 됩니다.
+Add file → Upload files에서 압축을 푼 파일과 폴더를 올립니다.
+ZIP 파일 자체를 올리지 마세요. package.json이 저장소 맨 위에 있어야 합니다.
+맨 위에는 dist, scripts, supabase 폴더와 package.json 등이 보이면 됩니다.
+.gitignore와 .node-version도 포함합니다. 전체 연구실 폴더는 올리지 않습니다.
+Commit changes로 저장하며, 이 안내에서는 기본 브랜치 이름을 main으로 가정합니다.
+예약 데이터나 .env, secret 키, service_role 키, DB 비밀번호를 GitHub에 올리지 마세요.
+
+4. Cloudflare Pages와 GitHub 연결
+Cloudflare의 Workers & Pages에서 Create application → Pages → Connect to Git을 선택합니다.
+Workers 프로젝트나 Upload assets(직접 업로드)가 아닌 Pages의 Git 연결을 선택하세요.
+방금 만든 GitHub 저장소를 연결하고 다음을 입력합니다.
+
+Production branch (운영 브랜치): main
+Framework preset (프레임워크): None
+Build command (빌드 명령): npm run build:cloud
+Build output directory (출력 폴더): cloud-dist
+Root directory (루트 폴더): 비워 둠 — package.json이 저장소 최상단에 있을 때
+
+빌드 환경 변수에 다음 세 값을 입력합니다.
+NODE_VERSION = 22
+SUPABASE_URL = Supabase 프로젝트의 Project URL (https://...supabase.co)
+SUPABASE_PUBLISHABLE_KEY = Supabase 프로젝트의 publishable key
+
+URL과 키는 Supabase의 Connect 또는 프로젝트 설정/API Keys에서 확인합니다.
+sb_publishable_로 시작하는 공개 키 또는 기존 anon 키만 사용합니다.
+sb_secret_ 또는 service_role 키는 넣지 마세요. 이 사이트는 공개 키와 로그인 권한 규칙을 사용합니다.
+사이트에 포함되는 공개 키 자체는 비밀번호가 아니며 DB 접근 제한은 위 SQL의 권한 규칙으로 처리합니다.
+운영(Production) 환경에 설정합니다. Preview도 시험하려면 해당 환경에도 설정이 필요합니다.
+환경 변수 변경 후에는 다시 배포해야 반영됩니다.
+Save and Deploy를 실행하면 빌드 후 https://프로젝트이름.pages.dev 주소가 생깁니다.
+Supabase Authentication의 URL Configuration → Site URL에도 실제 HTTPS 사이트 주소를 입력합니다.
+
+빌드가 실패하면 Deployments의 빌드 로그를 확인하세요.
+- 'SUPABASE_URL과 ... 먼저 설정' → 환경 변수 이름과 값을 확인합니다.
+- package.json을 못 찾음 → GitHub 파일 위치와 Root directory를 확인합니다.
+- secret/service_role 키 거절 → 공개 publishable key를 사용합니다.
+- 로그인 후 '연구실 계정 등록이 필요' → lab_members 등록 여부를 확인합니다.
+
+5. 나중에 수정하는 방법
+화면, 색상, 버튼, 드래그 동작: dist/index.html, style.css, app.js 등의 코드를 수정합니다.
+GitHub의 운영 브랜치(main)에 변경 내용을 올리면 Cloudflare가 자동으로 빌드·배포합니다.
+빌드에 성공한 뒤 새 화면이 적용됩니다. 확인할 때는 브라우저 새로고침을 하세요.
+여기서는 원본 dist를 수정하며, cloud-dist는 빌드 결과이므로 직접 수정하지 않습니다.
+
+예약 등록·변경·취소, 장비 추가·이름 변경: 사이트 화면에서 처리하며 GitHub 수정은 필요 없습니다.
+예약 저장 구조, SQL 함수, 접근 권한: Supabase에 별도 변경 SQL을 적용해야 합니다.
+SQL 파일만 GitHub에 올려도 Supabase에 자동 실행되지는 않습니다.
+Supabase URL·공개 키: Cloudflare 환경 변수를 바꾸고 다시 배포합니다.
+
+같은 Supabase 프로젝트를 계속 연결하면, 화면 코드를 재배포해도 예약은 그대로 남습니다.
+DB 수정이 필요한 업데이트는 초기 SQL 재실행 대신 별도의 변경 SQL(마이그레이션)로 진행합니다.
+변경 전 DB를 백업하고, 기존 예약을 보존하는 방식으로 적용해야 합니다.
+GitHub의 코드 이력이나 Cloudflare의 이전 배포로 되돌리기는 예약 데이터 복구 기능이 아닙니다.
+
+6. 배포 시험과 한계
+실제 Supabase/PostgreSQL에서 SQL·로그인·권한·동시성 검증은 아직 하지 않았습니다.
+이 묶음은 배포 시험을 위한 소스이며 운영 검증 완료를 뜻하지 않습니다.
+관리자와 일반 구성원 계정으로 아래를 확인한 뒤 실제 예약에 사용하세요.
+- 로그인과 등록 계정의 예약표 조회
+- 일반 구성원이 다른 사람 예약을 수정·취소할 수 없는지
+- 일반 구성원은 장비 관리 불가, 관리자는 장비 추가 가능
+- 겹친 예약 거절, 맞닿은 예약 허용, 자정 넘는 예약 표시
+- 예약 이동 확인창의 확인·취소, 새로고침 후 저장 유지
+- 두 계정의 같은 장비·같은 시간 동시 예약 중 하나만 저장되는지
+로컬 검증 내역은 검증결과.txt에 있습니다.
+각 서비스의 무료 한도는 실제 가입·배포 시 확인하세요. 추가 유료 옵션이나 도메인 구매는 필수가 아닙니다.
+
+공식 참고
+https://developers.cloudflare.com/pages/get-started/git-integration/
+https://developers.cloudflare.com/pages/configuration/build-configuration/
+https://developers.cloudflare.com/pages/configuration/git-integration/github-integration/
+https://developers.cloudflare.com/pages/get-started/direct-upload/
+https://supabase.com/docs/guides/auth/general-configuration
+https://supabase.com/docs/guides/getting-started/api-keys
+
+직접 업로드로 만든 Pages 프로젝트는 나중에 Git 연결로 전환할 수 없으므로,
+이번에는 처음부터 위의 GitHub 연결 방식으로 만드세요.

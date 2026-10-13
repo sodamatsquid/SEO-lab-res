@@ -1,0 +1,97 @@
+Cloudflare Pages + Supabase 무료 요금제 전환 준비 (2026-10-13)
+
+현재 상태
+실행.cmd는 여전히 로컬 SQLite만 사용합니다. 외부 가입·결제·배포·데이터 업로드는 하지 않았습니다.
+온라인용 코드와 SQL은 준비했지만 실제 Cloudflare/Supabase 계정 연결 검증은 아직 하지 않았습니다.
+아래 작업은 나중에 온라인으로 전환할 때만 필요합니다.
+
+구조
+로컬: 화면 → server.cjs → lib/repository.cjs → data/lab-booking.sqlite
+온라인: Cloudflare Pages 정적 화면 → Supabase Auth / PostgreSQL RPC
+로컬에서는 로그인 없이 사용합니다. 온라인 설정으로 빌드하면 로그인란과 공동 예약 안내가 표시됩니다.
+공개 publishable key만 화면에 포함하며 service_role/secret 키는 사용하지 않습니다.
+Cloudflare Pages Functions가 필요 없는 구성입니다. Cloudflare에는 cloud-dist만 올립니다.
+
+1. 추후 Supabase 준비
+사용자가 Free 계정/프로젝트를 만듭니다. 다른 자료가 없는 전용 새 프로젝트를 사용하세요.
+SQL Editor에서 supabase/01_schema.sql을 한 번 실행하고,
+그다음 supabase/02_initial_equipment.sql을 실행하면 장비 32대가 생성됩니다.
+온라인에는 로컬의 가상 예약 3건이나 사용자 예약을 자동 복사하지 않습니다.
+01_schema.sql을 중복 실행하면 기존 객체 때문에 실패하게 작성했습니다.
+
+2. 온라인 계정과 권한
+온라인 기본 설정은 연구실 계정 로그인을 요구합니다.
+Supabase Authentication에서 공개 신규 가입을 끄고 Users에서 연구실 계정을 만드세요.
+이메일·비밀번호 방식이며 계정 확인 상태도 확인합니다.
+각 사용자의 UUID를 확인한 뒤 SQL Editor에서 다음 형태로 구성원에 등록합니다.
+아래 문자열은 실제 UUID로 바꿔야 합니다.
+
+insert into public.lab_members(user_id,role)
+values ('실제-사용자-UUID','admin');
+
+일반 구성원은 role에 'member'를 사용합니다.
+관리자는 장비 관리 및 모든 예약 수정·취소, 일반 구성원은 전체 예약 조회와 자기 예약
+수정·취소가 가능하도록 RLS를 작성했습니다. 표시 이름이 같아도 계정 소유 권한은 다릅니다.
+lab_members.enabled=false로 바꾸면 해당 사용자의 DB 접근이 차단됩니다.
+앱 내 회원 승인/초대·비밀번호 재설정 화면은 없습니다. 계정 관리는 Supabase 관리자 화면에서 합니다.
+계정 없이 URL만으로 온라인 예약하는 방식은 이 기본 SQL에서 허용하지 않습니다.
+현재 로컬의 로그인 없는 사용 방식은 그대로입니다.
+
+3. 온라인 화면 만들기
+.env.example을 복사해 이름을 .env로 바꾸고 다음 두 값을 실제 값으로 채웁니다.
+SUPABASE_URL=https://실제프로젝트.supabase.co
+SUPABASE_PUBLISHABLE_KEY=실제공개키
+프로젝트 설정의 Project URL과 publishable key를 사용하세요.
+기존 anon key도 지원하지만 secret/service_role 키는 빌드에서 거절합니다. DB 비밀번호는 넣지 않습니다.
+
+이 프로젝트 폴더에서 터미널을 열어 실행:
+npm run build:cloud
+
+cloud-dist 폴더가 생성됩니다. 기존 dist와 SQLite 데이터는 바뀌지 않습니다.
+기본 dist/config.js는 로컬 모드이므로 dist 자체를 온라인에 올리지 마세요.
+.env, data, SQLite 파일은 업로드하지 마세요.
+
+4. Cloudflare Pages에 올리기
+최신 단계별 안내는 배포_먼저읽기.txt를 먼저 확인하세요. 이후 GitHub 코드 수정으로
+자동 업데이트하려면 처음부터 GitHub 연결 방식으로 Pages 프로젝트를 만드세요.
+Cloudflare Free 계정에서 Workers & Pages → Pages 프로젝트를 만듭니다.
+정적 파일 직접 업로드로 cloud-dist의 내용을 올릴 수 있습니다.
+실제 배포는 인터넷 공개 작업이므로 온라인 전환을 원할 때만 진행하세요.
+무료 pages.dev 주소를 사용하면 별도 도메인 구매가 필요 없습니다.
+직접 업로드로 만든 프로젝트는 나중에 Git 연결 방식으로 전환할 수 없습니다.
+Git 연동 시 프로젝트 루트는 이 폴더, 빌드 명령 npm run build:cloud, 출력 cloud-dist,
+Node.js 22.13 이상과 위 두 환경 변수를 설정하세요.
+Supabase Site URL에는 실제 Pages HTTPS 주소를 설정하세요.
+
+5. 실제 운영 전에 남아 있는 온라인 검증
+로컬 검증과 별개로 두 연구실 계정으로 로그인해서 다음을 확인해야 합니다.
+- 비회원/미등록/중지 계정의 접근 거절
+- 일반 회원의 타인 예약 수정·취소 거절, 관리자 장비 관리
+- 동일 시간 동시 예약은 한 건만 성공, 맞닿은 시간은 허용
+- 밤샘 예약·수정·취소·재로그인 후 유지·토큰 만료 갱신
+SQL에는 PostgreSQL 배타 제약(EXCLUDE, [시작,종료))으로 동시 겹침을 막도록 작성했습니다.
+이 PC에는 PostgreSQL/Docker가 없어 실제 PostgreSQL/Supabase 실행 검증은 하지 못했습니다.
+이번 온라인 검증은 파일 빌드와 공개 키 구분 등 로컬에서 가능한 범위까지입니다.
+
+6. 기존 데이터 이전
+SQLite와 Supabase는 서로 다른 DB입니다. 설정 변경만으로 로컬 예약이 자동 이전되지 않습니다.
+전환 시 로컬 서버를 종료하고 data 폴더를 백업한 뒤 별도 이전 절차를 진행하세요.
+장비 ID·날짜·색상 구조는 맞췄습니다. 기존 예약에 연결할 사용자 UUID는 별도 지정이 필요합니다.
+표시 이름만 보고 예약 소유 계정을 자동 추정하지 않습니다.
+
+7. 무료 범위 (배포 시 재확인)
+Supabase Free: DB 500 MB, 월 활성 사용자 50,000명, egress 5 GB,
+1주 비활성 시 일시 중지, 활성 프로젝트 2개 제한. 자동 백업은 포함되지 않습니다.
+Cloudflare Pages는 Functions를 호출하지 않는 정적 파일 요청이 무료·무제한입니다.
+첨부 파일 없이 예약 텍스트만 저장하도록 구성했습니다. 실제 사용량과 추후 정책에 따라 제한이
+생길 수 있으므로 무료 요금제의 영구 무제한 운영을 보장하지 않습니다. 수동 백업이 필요합니다.
+
+공식 근거
+https://supabase.com/pricing
+https://supabase.com/docs/guides/database/postgres/row-level-security
+https://supabase.com/docs/guides/getting-started/api-keys
+https://supabase.com/docs/reference/javascript/auth-signinwithpassword
+https://github.com/supabase/auth/blob/master/openapi.yaml
+https://developers.cloudflare.com/pages/functions/pricing/
+https://developers.cloudflare.com/pages/get-started/direct-upload/
+https://www.postgresql.org/docs/current/rangetypes.html

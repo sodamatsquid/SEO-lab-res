@@ -1,0 +1,3 @@
+name = "lab-booking"
+pages_build_output_dir = "./cloud-dist"
+compatibility_date = "2026-10-13"
