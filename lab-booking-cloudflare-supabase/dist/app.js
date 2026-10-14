@@ -8,13 +8,13 @@ function toast(message){$('toast').textContent=message;$('toast').hidden=false;c
 function showError(message){$('pageError').textContent=message;$('pageError').hidden=!message;}
 async function refresh(){
   const seq=++loadId,day=selectedDay;
-  try{const data=await api.state(day);if(seq!==loadId)return;state=data;if(api.online)$('manage').hidden=!data.admin;showError('');renderFilters();renderSuggestions();renderBoard();return true;}
+  try{const data=await api.state(day);if(seq!==loadId)return;state=data;showError('');renderFilters();renderSuggestions();renderBoard();return true;}
   catch(e){if(seq===loadId){showError(e.message);$('table').replaceChildren(el('p','empty','예약표를 불러오지 못했습니다. 새로고침을 눌러 주세요.'));}return false;}
 }
 function renderFilters(){const selected=$('category').value,categories=[...new Set(state.equipment.map(e=>e.category))];$('category').replaceChildren(new Option('전체 종류',''));categories.forEach(c=>$('category').add(new Option(c,c)));if(categories.includes(selected))$('category').value=selected;$('categoryOptions').replaceChildren(...categories.map(c=>new Option(c,c)));}
 function renderSuggestions(){for(const [id,key] of [['personOptions','people'],['titleOptions','titles']])$(id).replaceChildren(...(state.suggestions?.[key]||[]).map(value=>new Option(value,value)));}
 const bookingLabel=b=>b.person+(b.title?' | '+b.title:'');
-const canEdit=b=>!api.online||b.ownerId===state.userId||state.admin;
+const canEdit=()=>true; // This shared board intentionally allows all visitors to edit.
 function renderCalendar(){
   $('monthTitle').textContent=month.replace('-','년 ')+'월';const first=new Date(month+'-01T00:00:00Z'),count=new Date(Date.UTC(first.getUTCFullYear(),first.getUTCMonth()+1,0)).getUTCDate();
   const nodes=Array.from({length:first.getUTCDay()},()=>el('span'));
@@ -103,7 +103,7 @@ function updateColor(){const color=$('color').value;$('currentSwatch').style.bac
 function deviceNote(){const device=state.equipment.find(e=>e.id===$('device').value);$('deviceNote').textContent=device?.usageNote?'이용 안내: '+device.usageNote:'';}
 function openBooking(booking=null,deviceId=null,start=540,end=null){
   editing=booking?{...booking}:null;$('form').reset();$('error').textContent='';$('formTitle').textContent=booking?'예약 상세 · 수정':'새 예약';$('remove').hidden=!booking;
-  const editable=!api.online||!booking||booking.ownerId===state.userId||state.admin;
+  const editable=canEdit(booking);
   $('form').querySelectorAll('input,select,textarea,.swatch,#moreColors').forEach(e=>e.disabled=!editable);$('saveBooking').hidden=!editable;$('remove').hidden=!booking||!editable;if(!editable)$('formTitle').textContent='예약 상세 · 조회만 가능';
   $('device').replaceChildren(...state.equipment.filter(e=>e.active||e.id===booking?.equipmentId).map(e=>new Option(e.name+(!e.active?' (사용 중지)':''),e.id)));
   if(!$('device').options.length){toast('먼저 사용 가능한 장비를 추가해 주세요.');return;}
@@ -157,10 +157,9 @@ const colorRows=[
 ];
 colorRows.forEach((row,y)=>row.forEach((color,x)=>swatch(color,`${y+1}행 ${x+1}열 ${color}`,'morePalette')));
 $('morePalettePanel').addEventListener('beforetoggle',event=>{if(event.newState!=='open')return;const r=$('moreColors').getBoundingClientRect(),panel=$('morePalettePanel');panel.style.left=Math.max(8,Math.min(r.left,window.innerWidth-260))+'px';panel.style.top=Math.max(8,r.bottom+300<window.innerHeight?r.bottom+5:r.top-295)+'px';});
-function onlineStatus(){const logged=!!api.session();$('loginForm').hidden=logged;$('logout').hidden=!logged;$('authStatus').textContent=logged?'로그인: '+api.session().user.email:'연구실 계정으로 로그인해 주세요.';$('add').disabled=!logged;$('manage').hidden=true;}
 if(api.online){
-  $('authPanel').hidden=false;document.querySelector('.tag').textContent='온라인 공동 예약';document.querySelector('.notice').textContent='연구실 구성원이 함께 사용하는 예약표입니다. 한국시간 (Asia/Seoul) 기준입니다.';onlineStatus();
-  $('loginForm').onsubmit=async event=>{event.preventDefault();$('authError').textContent='';$('loginButton').disabled=true;try{await api.login($('email').value.trim(),$('password').value);$('password').value='';onlineStatus();await refresh();}catch(e){$('authError').textContent=e.message;}finally{$('loginButton').disabled=false;}};
-  $('logout').onclick=async()=>{await api.logout();onlineStatus();state={equipment:[],bookings:[]};renderBoard();};
+  try{sessionStorage.removeItem('lab-booking-supabase-session');}catch{}
+  document.querySelector('.tag').textContent='온라인 공동 예약 · 로그인 없음';
+  document.querySelector('.notice').textContent='누구나 예약 등록·수정·취소와 장비 관리를 할 수 있습니다. 예약은 온라인에 저장됩니다. 시간 기준: 한국시간 (Asia/Seoul)';
 }
 setDay(selectedDay);
