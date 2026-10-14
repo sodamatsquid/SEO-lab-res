@@ -4,6 +4,7 @@ const { DatabaseSync } = require('node:sqlite');
 const fs = require('node:fs');
 const path = require('node:path');
 const { randomUUID } = require('node:crypto');
+const {exportInput}=require('./export.cjs');
 const { local, today, parseLocal, bookingInput, equipmentInput, AppError } = require('./domain.cjs');
 const initialEquipment = [
   ...['H-1','H-2','H-3','L-1','L-2','L-3','L-4'].map(n => [`Muffle furnace ${n}`, '머플로']),
@@ -50,10 +51,18 @@ function createRepository(filename, { seed = true } = {}) {
   const bookingRow = r => ({ id:r.id, equipmentId:r.equipment_id, start:local(r.start_ms), end:local(r.end_ms),
     person:r.person, title:r.title, color:r.color, memo:r.memo, version:r.version, status:r.status });
   const equipment = () => db.prepare('SELECT * FROM equipment ORDER BY sort_order,rowid').all().map(equipmentRow);
-  const suggestions = () => ({people:db.prepare("SELECT person FROM bookings WHERE person<>'' GROUP BY person ORDER BY max(updated_at) DESC LIMIT 50").all().map(r=>r.person),titles:db.prepare("SELECT title FROM bookings WHERE title<>'' GROUP BY title ORDER BY max(updated_at) DESC LIMIT 50").all().map(r=>r.title)});
   function bookings(date) {
     const start = parseLocal(date+'T00:00'), end = start+86400000;
     return db.prepare("SELECT * FROM bookings WHERE status='active' AND start_ms<? AND end_ms>? ORDER BY start_ms").all(end,start).map(bookingRow);
+  }
+  function exportBookings(input){
+    const f=exportInput(input);
+    const rows=db.prepare(`SELECT b.*,e.name equipment_name,e.category FROM bookings b JOIN equipment e ON e.id=b.equipment_id
+      WHERE b.start_ms<? AND b.end_ms>? AND (? OR b.status='active') AND (?='' OR b.equipment_id=?)
+      AND (?='' OR instr(lower(b.person),lower(?))>0) ORDER BY b.start_ms,e.sort_order,b.id LIMIT 20001`)
+      .all(f.end,f.start,+f.includeCancelled,f.equipmentId,f.equipmentId,f.person,f.person);
+    if(rows.length>20000)throw new AppError('예약이 20,000건을 넘습니다. 기간이나 장비 조건을 좁혀 주세요.');
+    return {filters:{from:f.from,to:f.to,person:f.person,equipmentId:f.equipmentId,includeCancelled:f.includeCancelled},generatedAt:new Date().toISOString(),bookings:rows.map(r=>({...bookingRow(r),equipmentName:r.equipment_name,category:r.category,createdAt:r.created_at,updatedAt:r.updated_at}))};
   }
   function saveBooking(input, id = null) {
     const b = bookingInput(input);
@@ -105,6 +114,6 @@ function createRepository(filename, { seed = true } = {}) {
     const demos=[['eq-2','09:00',date,'12:00','가상 연구원 가','예시 · 산화물 열처리','#cfb8ed'],['eq-8','20:00',tomorrow,'06:00','가상 연구원 나','예시 · 밤샘 질화','#b6d9ef'],['eq-16','14:00',date,'15:30','가상 연구원 다','예시 · 분말 분석','#f1c2d8']];
     demos.forEach(([equipmentId,start,edate,end,person,title,color])=>saveBooking({equipmentId,start:date+'T'+start,end:edate+'T'+end,person,title,color,memo:'실제 예약이 아닌 가상 예시입니다. 자유롭게 수정하거나 취소해도 됩니다.'}));
   }
-  return { equipment,bookings,suggestions,saveBooking,cancelBooking,saveEquipment,reorderEquipment,close:()=>db.close() };
+  return { equipment,bookings,exportBookings,saveBooking,cancelBooking,saveEquipment,reorderEquipment,close:()=>db.close() };
 }
 module.exports={createRepository,initialEquipment};

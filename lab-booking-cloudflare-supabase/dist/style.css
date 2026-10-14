@@ -41,7 +41,7 @@ footer{padding-top:8px}.mobile-help{display:none}
 .booking-card strong{font-size:14px;line-height:1.5}
 .list-equipment{font-size:12px;color:#65478c;font-weight:bold}
 .list-time{font-size:12px;color:#665775;line-height:1.5;font-variant-numeric:tabular-nums}
-@media(any-pointer:coarse),(max-width:900px){.touch-tools{display:flex}}
+@media(max-width:680px){.touch-tools{display:flex}}
 @media(max-width:900px){
   :root{--equipment-width:166px}
   .layout{display:block}.layout aside{display:grid;grid-template-columns:200px minmax(0,1fr);gap:12px}
@@ -74,3 +74,53 @@ footer{padding-top:8px}.mobile-help{display:none}
   .schedule.list-view #bookingList{display:grid;gap:9px}
   .desktop-help{display:none}.mobile-help{display:inline}
 }
+/* Personal suggestions, export form and independent time-axis zoom. */
+.my-history{margin:12px 0;padding:10px;border:1px solid var(--line);border-radius:7px;background:#faf7fd}.my-history summary{cursor:pointer;color:#65478c;font-size:13px}.my-history h3{font-size:12px;margin:12px 0 6px}.history-item{display:flex;gap:6px;margin:5px 0}.history-item button:first-child{flex:1;min-width:0;text-align:left;overflow-wrap:anywhere}.history-item button{font-size:12px}.history-item button:last-child{flex-shrink:0;color:#a53249}
+.zoom-tools{display:none;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:8px;font-size:12px}.zoom-tools button{padding:7px 10px}.zoom-tools output{min-width:40px;text-align:center;font-variant-numeric:tabular-nums}.export-presets{display:flex;gap:8px;margin-top:10px}.export-presets button{font-size:12px}#exportStatus{font-size:13px;line-height:1.7;color:#65478c}.schedule.list-view .zoom-tools{display:none}
+@media(max-width:680px){.zoom-tools{display:flex;gap:5px}.zoom-tools>span{display:none}.zoom-tools button{min-height:44px;min-width:44px;padding:8px}.toolbar .nav{flex-wrap:wrap}.toolbar{gap:9px}.my-history button{min-height:40px}.history-item button:first-child{line-height:1.5}}
+
+/* Mobile: one date row, one action row and a gesture-driven timetable. */
+.mobile-workbar,.mobile-board-tools,#mobileMore{display:none}
+.mobile-sheet{width:min(480px,94vw)}.mobile-sheet .dialog-heading{margin-bottom:16px}
+.mobile-sheet .sheet-action{display:block;text-align:left;width:100%;padding:15px;margin-top:8px;min-height:48px}
+.sheet-action span{display:block;font-size:12px;color:#796c89;margin-top:5px}
+.mobile-notice{font-size:12px;line-height:1.7;margin-top:20px;color:#74677e}.mobile-notice summary{cursor:pointer}
+@media(max-width:680px){
+ body{background:#f7f5fb}header{position:relative;padding:12px 16px;display:block;border-bottom:1px solid #eee8f3}
+ header h1{font-size:19px;letter-spacing:-.5px;margin:2px 0 5px}.eyebrow{display:none}
+ header .tag{display:inline;padding:0;background:none;color:#887b94;font-size:10px}
+ #mobileMore{display:block;position:absolute;right:12px;top:12px;width:44px;height:44px;border:0;background:transparent;font-size:26px;line-height:20px;font-weight:bold;letter-spacing:2px}
+ main{padding:10px 12px 12px}.notice,.mobile-tools,.mobile-day-nav,.touch-tools,.toolbar{display:none}
+ .layout{margin:0}.mobile-workbar{display:block;margin-bottom:9px}
+ .mobile-date-row{display:flex;align-items:center;gap:3px;margin-bottom:8px}
+ .mobile-date-row button{height:44px;border:0;background:transparent;padding:0;flex-shrink:0}
+ #compactPrev,#compactNext{width:32px;font-size:27px;color:#73548f}
+ #compactDate{font-size:18px;font-weight:700;letter-spacing:-.6px;text-align:center;flex:1;min-width:0}
+ #compactToday{font-size:12px;padding:0 9px;color:#796388;margin-left:4px}
+ .mobile-action-row{display:flex;align-items:center;gap:8px}
+ .mobile-view-tabs{display:flex;flex:1;background:#eae4f2;border-radius:10px;padding:3px}
+ .mobile-view-tabs button{flex:1;min-width:0;height:38px;border:0;background:transparent;border-radius:8px;padding:0 8px;font-size:13px;color:#82758d}
+ .mobile-view-tabs button[aria-pressed=true]{background:white;color:#513871;font-weight:700;box-shadow:0 1px 4px #3a215814}
+ #compactSearch{width:44px;height:44px;padding:12px;border-radius:10px;border-color:#e0d6e9;background:white}
+ #compactSearch svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8}
+ #compactAdd{height:44px;padding:0 16px;border-radius:10px;font-size:13px;font-weight:700}
+ .mobile-board-tools{display:flex;align-items:center;gap:6px;min-height:40px}
+ .mobile-board-tools button{padding:0 8px;height:40px;border:0;background:transparent;font-size:12px;color:#79658e;white-space:nowrap}
+ #mobileDragToggle{padding-left:0;color:#7e718a;min-width:100px;text-align:left}
+ #mobileDragToggle span{margin-right:3px}#mobileDragToggle[aria-pressed=true]{color:#673b91;font-weight:700;background:#eee5f8;border-radius:7px;padding-left:8px}
+ .gesture-note{margin-left:auto;color:#a092ad;font-size:10px;white-space:nowrap}
+ #fitDay,#normalSize{margin-left:auto;text-decoration:underline;text-underline-offset:4px;font-size:11px}
+ #selectionHint{font-size:10px;min-height:15px;margin:0 0 7px;color:#91849c;line-height:1.5}
+ .board{height:calc(100dvh - 290px);max-height:none;min-height:240px;border-radius:12px;border-color:#d6c9e3;touch-action:none;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-gutter:stable;scrollbar-color:#c7b4db transparent}
+ .board .track{touch-action:none}.line,.track{min-height:48px}.reservation{height:34px;line-height:32px;top:7px;font-size:13px}
+ .name{font-size:12px}.axis{min-height:36px}.axis .name{font-size:11px}.hours,.hours .last{font-size:12px}
+ #table.zoom-overview .slot{border-right-color:transparent}#table.zoom-overview .slot:nth-child(8n){border-right-color:#ac97be}
+ footer{font-size:10px;padding:7px 3px 0}footer .mobile-help{display:none}
+ .schedule.list-view .mobile-board-tools{display:none}
+ #bookingList{margin-top:8px}.booking-card{border-radius:10px;border-top-color:#e6ddec;border-right-color:#e6ddec;border-bottom-color:#e6ddec;background:white;min-height:94px}
+ .mobile-sheet{width:100%;max-width:none;max-height:88dvh;margin:auto 0 0;border-radius:20px 20px 0 0;padding:20px 18px 28px}
+ .mobile-sheet aside{display:block}.mobile-sheet .card{padding:14px}.mobile-sheet .card input,.mobile-sheet .card select{font-size:16px;min-height:44px}
+ #mobileToolsPanel #calendar button{height:35px;font-size:13px}.mobile-sheet .day-nav button{min-height:38px}
+ dialog input,dialog select,dialog textarea{font-size:16px}dialog label{font-size:13px}
+}
+@media(max-width:350px){.gesture-note{display:none}#compactDate{font-size:16px}#compactAdd{padding:0 12px}.mobile-date-row{gap:0}}

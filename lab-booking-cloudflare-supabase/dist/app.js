@@ -1,10 +1,13 @@
 import {api} from './api.js';
+import {setupFeatures} from './features.js';
 import {today,shiftDay,minuteLabel,dateTime,clipBooking,textColor,fullTime,toMs,local} from './core.mjs';
 const $=id=>document.getElementById(id);
 const el=(tag,className,text)=>{const node=document.createElement(tag);if(className)node.className=className;if(text!==undefined)node.textContent=text;return node;};
 let state={equipment:[],bookings:[]},selectedDay=today(),month=selectedDay.slice(0,7),editing=null,editingEquipment=null,loadId=0,toastTimer,contextBooking=null,pendingMove=null;
 let touchSelection=false;
-const dragHelp=()=>touchSelection?'빈 칸을 끌어 시간을 선택하세요. 가장자리에서 기다리면 옆으로 이동합니다.':'빈 칸 드래그: 5분 단위 예약 · 예약 막대 드래그: 이동 · 우클릭: 수정·삭제';
+const mobileScreen=matchMedia('(max-width:680px)');
+const features=setupFeatures({api,getState:()=>state,getDay:()=>selectedDay,toast});
+const dragHelp=()=>mobileScreen.matches?(touchSelection?'빈 칸 드래그로 예약 · 두 손가락으로 확대':'밀어서 이동 · 빈 칸을 누르면 예약'):'빈 칸 드래그: 5분 단위 예약 · 예약 막대 드래그: 이동 · 우클릭: 수정·삭제';
 const formatDate=day=>new Intl.DateTimeFormat('ko-KR',{timeZone:'Asia/Seoul',year:'numeric',month:'long',day:'numeric',weekday:'long'}).format(new Date(day+'T00:00:00+09:00'));
 function toast(message){$('toast').textContent=message;$('toast').hidden=false;clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('toast').hidden=true,3500);}
 function showError(message){$('pageError').textContent=message;$('pageError').hidden=!message;}
@@ -14,7 +17,7 @@ async function refresh(){
   catch(e){if(seq===loadId){showError(e.message);$('table').replaceChildren(el('p','empty','예약표를 불러오지 못했습니다. 새로고침을 눌러 주세요.'));}return false;}
 }
 function renderFilters(){const selected=$('category').value,categories=[...new Set(state.equipment.map(e=>e.category))];$('category').replaceChildren(new Option('전체 종류',''));categories.forEach(c=>$('category').add(new Option(c,c)));if(categories.includes(selected))$('category').value=selected;$('categoryOptions').replaceChildren(...categories.map(c=>new Option(c,c)));}
-function renderSuggestions(){for(const [id,key] of [['personOptions','people'],['titleOptions','titles']])$(id).replaceChildren(...(state.suggestions?.[key]||[]).map(value=>new Option(value,value)));}
+function renderSuggestions(){features.renderSuggestions();}
 const bookingLabel=b=>b.person+(b.title?' | '+b.title:'');
 const canEdit=()=>true; // This shared board intentionally allows all visitors to edit.
 function renderCalendar(){
@@ -48,6 +51,7 @@ function enableDrag(track,device){
   track.addEventListener('pointermove',event=>{if(!selection||selection.pointerId!==event.pointerId)return;selection.clientX=event.clientX;selection.last=minuteAt(event);selection.moved ||= Math.abs(event.clientX-selection.x)>=3;highlight();});
   track.addEventListener('pointerup',event=>{if(!selection||selection.pointerId!==event.pointerId)return;selection.last=minuteAt(event);const {start,end}=bounds(),moved=selection.moved,clickStart=Math.floor(selection.first/30)*30;lastHandled=event.timeStamp;clear();track.releasePointerCapture(event.pointerId);openBooking(null,device.id,moved?start:clickStart,moved?end:null);});
   track.addEventListener('pointercancel',clear);track.addEventListener('lostpointercapture',clear);
+  track.addEventListener('gesturecancel',clear);
   track.addEventListener('click',event=>{if(event.detail!==0&&event.timeStamp-lastHandled<500){event.preventDefault();event.stopImmediatePropagation();}},true);
 }
 function enableBookingActions(bar,booking,track){
@@ -79,6 +83,7 @@ function enableBookingActions(bar,booking,track){
     requestMove(booking,updated);
   });
   bar.addEventListener('pointercancel',reset);bar.addEventListener('lostpointercapture',reset);
+  track.addEventListener('gesturecancel',reset);
   bar.addEventListener('click',event=>{if(event.detail!==0&&event.timeStamp-lastMoved<500){event.preventDefault();event.stopImmediatePropagation();}},true);
 }
 function requestMove(original,updated){
@@ -119,6 +124,7 @@ function renderBoard(){
   if(!devices.length)fragment.append(el('p','empty','해당하는 장비가 없습니다. 검색어와 종류를 확인해 주세요.'));
   table.replaceChildren(fragment);$('summary').textContent=`장비 ${devices.length}대 / 전체 ${state.equipment.length}대 · 표시된 예약 ${state.bookings.filter(b=>devices.some(d=>d.id===b.equipmentId)).length}건`;
   renderBookingList(devices);
+  features.applyZoom();
 }
 function renderBookingList(devices){
   const visible=state.bookings.filter(b=>devices.some(d=>d.id===b.equipmentId)).sort((a,b)=>a.start.localeCompare(b.start));
@@ -132,9 +138,12 @@ function renderBookingList(devices){
 function setTouchSelection(enabled){
   touchSelection=enabled;document.querySelector('.board').classList.toggle('touch-select',enabled);
   $('touchSelect').setAttribute('aria-pressed',String(enabled));$('touchScroll').setAttribute('aria-pressed',String(!enabled));
-  $('selectionHint').textContent=enabled?dragHelp():'시간표를 좌우로 밀어 이동하세요. 빈 칸을 누르거나 ‘드래그 예약’을 선택하면 예약할 수 있습니다.';
+  $('mobileDragToggle').setAttribute('aria-pressed',String(enabled));
+  $('selectionHint').textContent=dragHelp();
 }
 $('touchScroll').onclick=()=>setTouchSelection(false);$('touchSelect').onclick=()=>setTouchSelection(true);
+mobileScreen.addEventListener('change',()=>setTouchSelection(false));
+setTouchSelection(false);
 $('toggleTools').onclick=()=>{
   const open=document.querySelector('.layout').classList.toggle('tools-open');$('toggleTools').setAttribute('aria-expanded',String(open));
   $('toggleTools').textContent=open?'날짜 · 장비 찾기 ▴':'날짜 · 장비 찾기 ▾';
@@ -166,6 +175,7 @@ $('form').onsubmit=async event=>{
     if(toMs(end)<=toMs(start))throw Error('종료 날짜·시간은 시작 날짜·시간보다 늦어야 합니다.');
     $('saveBooking').disabled=true;$('remove').disabled=true;
     await api.saveBooking({equipmentId:$('device').value,start,end,person:$('person').value,title:$('title').value,color:$('color').value,memo:$('memo').value,version:editing?.version},editing?.id);
+    features.remember(editing,$('person').value,$('title').value);
     $('modal').close();await refresh();toast(editing?'예약을 수정했습니다.':'예약을 저장했습니다.');
   }catch(e){$('error').textContent=e.message;}finally{$('saveBooking').disabled=false;$('remove').disabled=false;}
 };
