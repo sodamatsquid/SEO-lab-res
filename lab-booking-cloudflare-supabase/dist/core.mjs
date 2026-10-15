@@ -22,3 +22,9 @@ export function textColor(hex){
   const l=.2126*rgb[0]+.7152*rgb[1]+.0722*rgb[2];return l>.179?'#17121d':'#ffffff';
 }
 export const fullTime=value=>value.replace('T',' ');
+export function normalizeDayInput(value){
+ const raw=value.trim(),parts=/^(\d{4})[-./](\d{1,2})[-./](\d{1,2})$/.exec(raw);
+ const day=/^\d{8}$/.test(raw)?raw.slice(0,4)+'-'+raw.slice(4,6)+'-'+raw.slice(6):parts?`${parts[1]}-${parts[2].padStart(2,'0')}-${parts[3].padStart(2,'0')}`:raw;
+ if(!/^\d{4}-\d{2}-\d{2}$/.test(day)||day<'2000-01-01'||day>'2100-12-31'||!Number.isFinite(toMs(day+'T00:00'))||local(toMs(day+'T00:00')).slice(0,10)!==day)throw Error('날짜를 2026-10-15 또는 20261015처럼 입력해 주세요.');
+ return day;
+}

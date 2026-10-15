@@ -1,12 +1,17 @@
 import {api} from './api.js';
 import {setupFeatures} from './features.js';
-import {today,shiftDay,minuteLabel,dateTime,clipBooking,textColor,fullTime,toMs,local} from './core.mjs';
+import {setupBookingInfo} from './booking-info.mjs';
+import {createColorHistory,COLOR_KEY} from './color-history.mjs';
+import {today,shiftDay,minuteLabel,dateTime,clipBooking,textColor,fullTime,toMs,local,normalizeDayInput} from './core.mjs';
 const $=id=>document.getElementById(id);
 const el=(tag,className,text)=>{const node=document.createElement(tag);if(className)node.className=className;if(text!==undefined)node.textContent=text;return node;};
 let state={equipment:[],bookings:[]},selectedDay=today(),month=selectedDay.slice(0,7),editing=null,editingEquipment=null,loadId=0,toastTimer,contextBooking=null,pendingMove=null;
 let touchSelection=false;
 const mobileScreen=matchMedia('(max-width:680px)');
 const features=setupFeatures({api,getState:()=>state,getDay:()=>selectedDay,toast});
+const bookingInfo=setupBookingInfo({getEquipment:id=>state.equipment.find(e=>e.id===id),onEdit:openBooking,onMenu:openBookingMenu});
+let colorStorage;try{colorStorage=localStorage;}catch{}
+const colorHistory=createColorHistory(colorStorage);
 const dragHelp=()=>mobileScreen.matches?(touchSelection?'빈 칸 드래그로 예약 · 두 손가락으로 확대':'밀어서 이동 · 빈 칸을 누르면 예약'):'빈 칸 드래그: 5분 단위 예약 · 예약 막대 드래그: 이동 · 우클릭: 수정·삭제';
 const formatDate=day=>new Intl.DateTimeFormat('ko-KR',{timeZone:'Asia/Seoul',year:'numeric',month:'long',day:'numeric',weekday:'long'}).format(new Date(day+'T00:00:00+09:00'));
 function toast(message){$('toast').textContent=message;$('toast').hidden=false;clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('toast').hidden=true,3500);}
@@ -26,7 +31,9 @@ function renderCalendar(){
   for(let n=1;n<=count;n++){const day=month+'-'+String(n).padStart(2,'0'),button=el('button',`${day===selectedDay?'selected ':''}${day===today()?'is-today':''}`,n);button.setAttribute('aria-label',day);button.setAttribute('aria-pressed',String(day===selectedDay));button.onclick=()=>setDay(day);nodes.push(button);}
   $('calendar').replaceChildren(...nodes);
 }
-function setDay(day){if(!/^\d{4}-\d{2}-\d{2}$/.test(day)||day<'2000-01-01'||day>'2100-12-31')return;selectedDay=day;month=day.slice(0,7);$('day').value=day;$('dateTitle').textContent=formatDate(day);renderCalendar();refresh();}
+function setDay(day){if(!/^\d{4}-\d{2}-\d{2}$/.test(day)||day<'2000-01-01'||day>'2100-12-31')return;selectedDay=day;month=day.slice(0,7);$('day').value=day;$('dayError').textContent='';$('dateTitle').textContent=formatDate(day);renderCalendar();refresh();}
+function applyDayInput(){try{setDay(normalizeDayInput($('day').value));$('day').dispatchEvent(new Event('dayapplied'));}catch(e){$('dayError').textContent=e.message;}}
+$('applyDay').onclick=applyDayInput;$('day').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();applyDayInput();}});
 function changeMonth(delta){const d=new Date(month+'-01T00:00:00Z');d.setUTCMonth(d.getUTCMonth()+delta);if(d.getUTCFullYear()<2000||d.getUTCFullYear()>2100)return;month=d.toISOString().slice(0,7);renderCalendar();}
 function visibleEquipment(){const search=$('search').value.toLocaleLowerCase().trim(),category=$('category').value;return state.equipment.filter(e=>(e.active||$('showInactive').checked||state.bookings.some(b=>b.equipmentId===e.id))&&(!search||e.name.toLocaleLowerCase().includes(search))&&(!category||category===e.category));}
 function enableDrag(track,device){
@@ -58,7 +65,6 @@ function enableBookingActions(bar,booking,track){
   let move=null,lastMoved=-1000;
   const board=document.querySelector('.board');
   const reset=()=>{move=null;bar.style.transform='';bar.style.pointerEvents='';bar.classList.remove('moving');};
-  bar.addEventListener('contextmenu',event=>{event.preventDefault();if(move)return;contextBooking={...booking};const menu=$('bookingMenu');$('menuEdit').textContent=canEdit(booking)?'예약 수정':'예약 상세';$('menuDelete').hidden=!canEdit(booking);menu.style.left=Math.max(8,Math.min(event.clientX,innerWidth-175))+'px';menu.style.top=Math.max(8,Math.min(event.clientY,innerHeight-115))+'px';menu.showPopover();});
   bar.addEventListener('pointerdown',event=>{if(event.button!==0||(event.pointerType==='touch'&&!touchSelection)||!canEdit(booking)||move)return;event.preventDefault();move={pointerId:event.pointerId,x:event.clientX,y:event.clientY,scroll:board.scrollLeft,moved:false,delta:0,target:null};bar.setPointerCapture(event.pointerId);});
   function updateMove(event){
     if(!move||move.pointerId!==event.pointerId)return;
@@ -103,6 +109,7 @@ $('confirmMove').onclick=async()=>{
   finally{$('confirmMove').disabled=false;$('cancelMove').disabled=false;}
 };
 function renderBoard(){
+  bookingInfo.hide();
   const table=$('table'),devices=visibleEquipment(),fragment=document.createDocumentFragment(),axis=el('div','line axis');axis.append(el('div','name','장비 / 시간'));
   const hours=el('div','hours');
   for(let h=0;h<=24;h++){
@@ -118,7 +125,7 @@ function renderBoard(){
     for(let i=0;i<48;i++){const slot=el('button','slot');slot.setAttribute('aria-label',`${device.name} ${minuteLabel(i*30)} 예약`);slot.disabled=!device.active;slot.onclick=()=>openBooking(null,device.id,i*30);track.append(slot);}
     for(const b of state.bookings.filter(b=>b.equipmentId===device.id)){
       const clip=clipBooking(b,selectedDay);if(!clip)continue;const label=bookingLabel(b),bar=el('button','reservation',(clip.before?'‹ ':'')+label+(clip.after?' ›':''));
-      bar.style.left=clip.start/1440*100+'%';bar.style.width=(clip.end-clip.start)/1440*100+'%';bar.style.background=b.color;bar.style.color=textColor(b.color);bar.title=`${label}\n${fullTime(b.start)} ~ ${fullTime(b.end)}\n${b.memo}\n클릭: 상세 · 우클릭: 메뉴 · 드래그: 이동`;bar.setAttribute('aria-label',`${label}, ${fullTime(b.start)} ~ ${fullTime(b.end)}, 상세 보기`);bar.onclick=()=>openBooking(b);enableBookingActions(bar,b,track);track.append(bar);
+      bar.style.left=clip.start/1440*100+'%';bar.style.width=(clip.end-clip.start)/1440*100+'%';bar.style.background=b.color;bar.style.color=textColor(b.color);bar.setAttribute('aria-label',`${label}, ${fullTime(b.start)} ~ ${fullTime(b.end)}, 상세 보기`);bookingInfo.bind(bar,b);enableBookingActions(bar,b,track);track.append(bar);
     }row.append(track);fragment.append(row);
   }
   if(!devices.length)fragment.append(el('p','empty','해당하는 장비가 없습니다. 검색어와 종류를 확인해 주세요.'));
@@ -126,14 +133,28 @@ function renderBoard(){
   renderBookingList(devices);
   features.applyZoom();
 }
+const listFilters=el('details','list-filters');
+listFilters.innerHTML='<summary><span>조건별 보기</span><span id="listFilterSummary">전체 예약</span><span class="filter-chevron" aria-hidden="true">⌄</span></summary><div class="list-filter-fields"><div><label for="listPerson">예약자</label><select id="listPerson"><option value="">전체 예약자</option></select></div><div><label for="listEquipment">장비</label><select id="listEquipment"><option value="">전체 장비</option></select></div><button type="button" id="clearListFilters">조건 초기화</button></div>';
+$('bookingList').before(listFilters);
+const listStatus=el('div','list-status');listStatus.id='listStatus';listStatus.setAttribute('aria-live','polite');$('bookingList').before(listStatus);
+for(const id of ['listPerson','listEquipment'])$(id).onchange=()=>{bookingInfo.hide();renderBookingList(visibleEquipment());};
+$('clearListFilters').onclick=()=>{$('listPerson').value='';$('listEquipment').value='';renderBookingList(visibleEquipment());};
 function renderBookingList(devices){
-  const visible=state.bookings.filter(b=>devices.some(d=>d.id===b.equipmentId)).sort((a,b)=>a.start.localeCompare(b.start));
+  const person=$('listPerson').value,equipment=$('listEquipment').value;
+  const people=[...new Set(state.bookings.map(b=>b.person))].sort((a,b)=>a.localeCompare(b,'ko'));
+  if(person&&!people.includes(person))people.push(person);
+  $('listPerson').replaceChildren(new Option('전체 예약자',''),...people.map(p=>new Option(p,p)));$('listPerson').value=person;
+  $('listEquipment').replaceChildren(new Option('전체 장비',''),...state.equipment.map(e=>new Option(e.name,e.id)));$('listEquipment').value=equipment;
+  const visible=state.bookings.filter(b=>devices.some(d=>d.id===b.equipmentId)&&(!person||b.person===person)&&(!equipment||b.equipmentId===equipment)).sort((a,b)=>a.start.localeCompare(b.start));
+  const captions=[person,equipment?state.equipment.find(e=>e.id===equipment)?.name:''].filter(Boolean);
+  $('listFilterSummary').textContent=captions.join(' · ')||'전체 예약';listFilters.classList.toggle('has-filter',captions.length>0);
+  listStatus.textContent=`예약 ${visible.length}건 · ${$('search').value||$('category').value?'장비 검색 조건 적용 중':'선택한 날짜'} · 길게 눌러 수정·삭제`;
   const cards=visible.map(b=>{
     const device=devices.find(d=>d.id===b.equipmentId),card=el('button','booking-card');card.type='button';card.style.borderLeftColor=b.color;
     card.append(el('span','list-equipment',device.name),el('strong','',bookingLabel(b)),el('span','list-time',`${fullTime(b.start)} ~ ${fullTime(b.end)}`));
-    card.setAttribute('aria-label',`${device.name}, ${bookingLabel(b)}, 상세 보기`);card.onclick=()=>openBooking(b);return card;
+    card.setAttribute('aria-label',`${device.name}, ${bookingLabel(b)}, 상세 보기`);bookingInfo.bind(card,b,{list:true});return card;
   });
-  $('bookingList').replaceChildren(...(cards.length?cards:[el('p','empty','선택한 날짜와 장비에 예약이 없습니다. ‘새 예약’으로 등록하세요.')]));
+  $('bookingList').replaceChildren(...(cards.length?cards:[el('p','empty','조건에 맞는 예약이 없습니다. 날짜나 조회 조건을 바꿔 주세요.')]));
 }
 function setTouchSelection(enabled){
   touchSelection=enabled;document.querySelector('.board').classList.toggle('touch-select',enabled);
@@ -156,6 +177,7 @@ $('mobilePrev').onclick=()=>setDay(shiftDay(selectedDay,-1));$('mobileNext').onc
 function updateColor(){const color=$('color').value;$('currentSwatch').style.background=color;$('currentSwatch').title=color;$('colorPreview').style.background=color;$('colorPreview').style.color=textColor(color);$('colorPreview').textContent=($('person').value||'예약자')+' | '+($('title').value||'실험 제목');document.querySelectorAll('.swatch').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.color===color)));}
 function deviceNote(){const device=state.equipment.find(e=>e.id===$('device').value);$('deviceNote').textContent=device?.usageNote?'이용 안내: '+device.usageNote:'';}
 function openBooking(booking=null,deviceId=null,start=540,end=null){
+  bookingInfo.hide();
   editing=booking?{...booking}:null;$('form').reset();$('error').textContent='';$('formTitle').textContent=booking?'예약 상세 · 수정':'새 예약';$('remove').hidden=!booking;
   const editable=canEdit(booking);
   $('form').querySelectorAll('input,select,textarea,.swatch,#moreColors').forEach(e=>e.disabled=!editable);$('saveBooking').hidden=!editable;$('remove').hidden=!booking||!editable;if(!editable)$('formTitle').textContent='예약 상세 · 조회만 가능';
@@ -164,7 +186,7 @@ function openBooking(booking=null,deviceId=null,start=540,end=null){
   if(booking||deviceId)$('device').value=booking?.equipmentId||deviceId;
   const from=booking?.start||dateTime(selectedDay,minuteLabel(start)),to=booking?.end||(end===null?local(toMs(from)+3600000):dateTime(selectedDay,minuteLabel(end)));
   $('startDate').value=from.slice(0,10);$('startTime').value=from.slice(11);$('endDate').value=to.slice(0,10);$('endTime').value=to.slice(11);
-  $('person').value=booking?.person||'';$('title').value=booking?.title||'';$('memo').value=booking?.memo||'';$('color').value=booking?.color||'#cfb8ed';deviceNote();updateColor();$('modal').showModal();
+  $('person').value=booking?.person||'';$('title').value=booking?.title||'';$('memo').value=booking?.memo||'';$('color').value=booking?.color||colorHistory.latest();deviceNote();updateColor();$('modal').showModal();
 }
 function closeBooking(){if(!$('saveBooking').disabled)$('modal').close();}
 $('form').onsubmit=async event=>{
@@ -180,6 +202,12 @@ $('form').onsubmit=async event=>{
   }catch(e){$('error').textContent=e.message;}finally{$('saveBooking').disabled=false;$('remove').disabled=false;}
 };
 function requestCancellation(booking){editing=booking;$('confirmText').textContent=`${bookingLabel(booking)}\n${fullTime(booking.start)} ~ ${fullTime(booking.end)}`;$('cancelError').textContent='';$('confirmModal').showModal();}
+function openBookingMenu(booking,point,touch=false){
+  bookingInfo.hide();contextBooking={...booking};const menu=$('bookingMenu');
+  menu.classList.toggle('touch-menu',touch);$('menuEdit').textContent='예약 수정';$('menuDelete').hidden=!canEdit(booking);
+  let caption=$('bookingMenuCaption');if(!caption){caption=el('p','menu-caption');caption.id='bookingMenuCaption';menu.prepend(caption);}
+  caption.textContent=bookingLabel(booking);menu.style.left=Math.max(8,Math.min(point.left,innerWidth-190))+'px';menu.style.top=Math.max(8,Math.min(point.bottom,innerHeight-170))+'px';menu.showPopover();
+}
 $('remove').onclick=()=>{if(editing)requestCancellation(editing);};
 $('keepBooking').onclick=()=>$('confirmModal').close();
 $('menuEdit').onclick=()=>{$('bookingMenu').hidePopover();if(contextBooking)openBooking(contextBooking);};
@@ -196,9 +224,16 @@ $('manage').onclick=async()=>{if(await refresh()){renderManager();editEquipment(
 $('equipmentForm').onsubmit=async event=>{event.preventDefault();$('equipmentError').textContent='';$('saveEquipment').disabled=true;try{const saved=await api.saveEquipment({name:$('equipmentName').value,category:$('equipmentCategory').value,sortOrder:Number($('equipmentOrder').value),active:$('equipmentActive').checked,usageNote:$('equipmentNote').value},editingEquipment);await refresh();renderManager();editEquipment(saved);toast('장비 정보를 저장했습니다.');}catch(e){$('equipmentError').textContent=e.message;}finally{$('saveEquipment').disabled=false;}};
 $('newEquipment').onclick=()=>{editEquipment();$('equipmentName').focus();};$('closeManager').onclick=()=>$('manager').close();
 $('device').onchange=deviceNote;$('color').oninput=updateColor;$('person').oninput=updateColor;$('title').oninput=updateColor;$('cancel').onclick=closeBooking;$('closeBooking').onclick=closeBooking;
-$('add').onclick=()=>openBooking();$('refresh').onclick=refresh;$('prev').onclick=()=>setDay(shiftDay(selectedDay,-1));$('next').onclick=()=>setDay(shiftDay(selectedDay,1));$('today').onclick=()=>setDay(today());$('day').onchange=()=>setDay($('day').value);$('monthPrev').onclick=()=>changeMonth(-1);$('monthNext').onclick=()=>changeMonth(1);$('search').oninput=renderBoard;$('category').onchange=renderBoard;$('showInactive').onchange=renderBoard;
+$('color').onchange=()=>rememberColor($('color').value);
+$('add').onclick=()=>openBooking();$('refresh').onclick=refresh;$('prev').onclick=()=>setDay(shiftDay(selectedDay,-1));$('next').onclick=()=>setDay(shiftDay(selectedDay,1));$('today').onclick=()=>setDay(today());$('monthPrev').onclick=()=>changeMonth(-1);$('monthNext').onclick=()=>changeMonth(1);$('search').oninput=renderBoard;$('category').onchange=renderBoard;$('showInactive').onchange=renderBoard;
 for(let n=0;n<=1440;n+=30)$('timeOptions').append(new Option(minuteLabel(n),minuteLabel(n)));
-function swatch(color,name,parent){const button=el('button','swatch');button.type='button';button.style.background=color;button.dataset.color=color;button.title=name;button.setAttribute('aria-label',name);button.onclick=()=>{$('color').value=color;updateColor();$('morePalettePanel').hidePopover();};$(parent).append(button);}
+function swatch(color,name,parent){const button=el('button','swatch');button.type='button';button.style.background=color;button.dataset.color=color;button.title=name;button.setAttribute('aria-label',name);button.onclick=()=>{$('color').value=color;rememberColor(color);$('morePalettePanel').hidePopover();};$(parent).append(button);}
+function rememberColor(color){colorHistory.remember(color);renderRecentColors();updateColor();}
+const recentColors=el('div','recent-colors');recentColors.innerHTML='<span>최근 색상</span><div id="recentColors" role="group" aria-label="이 브라우저의 최근 색상"></div><button type="button" id="clearRecentColors">지우기</button>';
+document.querySelector('.current-color').after(recentColors);
+function renderRecentColors(){const values=colorHistory.read();recentColors.hidden=!values.length;$('recentColors').replaceChildren();values.forEach(c=>swatch(c,'최근 색상 '+c,'recentColors'));}
+$('clearRecentColors').onclick=()=>{colorHistory.clear();renderRecentColors();toast('이 브라우저의 최근 색상만 지웠습니다.');};
+window.addEventListener('storage',e=>{if(e.key===COLOR_KEY||e.key===null)renderRecentColors();});renderRecentColors();
 for(const [color,name] of [['#de3323','빨강'],['#fbfe57','노랑'],['#86fa4f','연두'],['#8ffbfd','하늘'],['#351af4','파랑'],['#e23bf6','자홍'],['#6e140c','적갈색'],['#7e7f27','올리브'],['#407d23','초록'],['#457e7f','청록'],['#15077a','남색'],['#71187b','보라'],['#000000','검정'],['#808080','회색'],['#c0c0c0','은색'],['#ffffff','흰색']])swatch(color,name,'palette');
 const colorRows=[
   ['#6e140c','#863a16','#32330a','#163209','#1d3362','#15077a','#3b3593','#000000'],

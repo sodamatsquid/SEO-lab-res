@@ -35,26 +35,30 @@ export function setupFeatures({api,getState,getDay,toast}){
  <div class="times"><div><label for="exportFrom">시작 날짜</label><input id="exportFrom" type="date" min="2000-01-01" max="2100-12-31" required></div><div><label for="exportTo">종료 날짜</label><input id="exportTo" type="date" min="2000-01-01" max="2100-12-31" required></div></div>
  <div class="export-presets"><button type="button" id="exportMonth">선택한 달</button><button type="button" id="exportRecent">최근 4개월</button></div>
  <label for="exportPerson">예약자 이름 (선택)</label><input id="exportPerson" maxlength="40" placeholder="비워 두면 전체 · 이름 일부로 검색 가능">
- <label for="exportEquipment">장비</label><select id="exportEquipment"></select>
+ <div class="times"><div><label for="exportCategory">장비 종류</label><select id="exportCategory"></select></div><div><label for="exportEquipment">장비</label><select id="exportEquipment"></select></div></div>
+ <label for="exportOrder">엑셀 정렬</label><select id="exportOrder"><option value="date">시작 날짜순</option><option value="equipment">장비별 · 시작 날짜순</option><option value="category">장비 종류별 · 장비별 · 시작 날짜순</option></select>
  <label class="check"><input id="exportCancelled" type="checkbox" checked> 취소된 예약도 포함</label>
- <p class="muted">선택 기간과 겹치는 예약의 전체 시작·종료 시간을 담습니다. 최대 366일 / 20,000건이며, 더 많으면 기간을 나누어 주세요. 엑셀에는 ‘예약기록’과 ‘원본데이터’ 시트가 포함됩니다.</p>
+ <p class="muted">선택 기간과 겹치는 예약을 한 시트에 정리합니다. 사용 시간은 시간(h)·분(min)으로 나누며, 내부 ID와 버전 정보는 넣지 않습니다. 최대 366일 / 20,000건입니다.</p>
  <p id="retentionInfo" class="muted"></p><div id="exportError" class="error" role="alert"></div><p id="exportStatus" role="status"></p>
  <div class="actions"><button type="button" id="cancelExport">닫기</button><button type="submit" class="primary" id="saveExport">엑셀 다운로드</button></div></form>`;
  document.body.append(dialog);
+ function fillExportEquipment(){const category=$('exportCategory').value;$('exportEquipment').replaceChildren(new Option('전체 장비',''),...getState().equipment.filter(e=>!category||e.category===category).map(e=>new Option(e.name+(e.active?'':' (사용 중지)'),e.id)));}
+ $('exportCategory').onchange=fillExportEquipment;
  function chooseMonth(){const first=getDay().slice(0,7)+'-01',date=new Date(first+'T00:00Z');date.setUTCMonth(date.getUTCMonth()+1);$('exportFrom').value=first;$('exportTo').value=shiftDay(date.toISOString().slice(0,10),-1);}
- download.onclick=()=>{chooseMonth();$('exportPerson').value='';$('exportCancelled').checked=true;$('exportEquipment').replaceChildren(new Option('전체 장비',''),...getState().equipment.map(e=>new Option(e.name+(e.active?'':' (사용 중지)'),e.id)));$('exportError').textContent='';$('exportStatus').textContent='';$('retentionInfo').textContent='보관 기준: 오늘 기준 '+retentionCutoff(today())+' 00:00 전에 종료된 예약은 자동 정리가 활성화되면 삭제됩니다. 필요한 기록은 미리 내려받아 주세요. 작동 여부는 관리자가 Supabase에서 확인합니다.';dialog.showModal();};
+ download.onclick=()=>{chooseMonth();$('exportPerson').value='';$('exportCancelled').checked=true;$('exportCategory').replaceChildren(new Option('전체 종류',''),...[...new Set(getState().equipment.map(e=>e.category))].map(c=>new Option(c,c)));$('exportOrder').value='date';fillExportEquipment();$('exportError').textContent='';$('exportStatus').textContent='';$('retentionInfo').textContent='보관 기준: 오늘 기준 '+retentionCutoff(today())+' 00:00 전에 종료된 예약은 자동 정리가 활성화되면 삭제됩니다. 필요한 기록은 미리 내려받아 주세요. 작동 여부는 관리자가 Supabase에서 확인합니다.';dialog.showModal();};
  $('exportMonth').onclick=chooseMonth;$('exportRecent').onclick=()=>{$('exportFrom').value=retentionCutoff(today());$('exportTo').value=today();};
  $('closeExport').onclick=$('cancelExport').onclick=()=>dialog.close();
  $('exportForm').onsubmit=async event=>{
   event.preventDefault();$('exportError').textContent='';$('exportStatus').textContent='';
-  const filters={from:$('exportFrom').value,to:$('exportTo').value,person:$('exportPerson').value.trim(),equipmentId:$('exportEquipment').value,includeCancelled:$('exportCancelled').checked};
+  const order=$('exportOrder').value,filters={category:$('exportCategory').value,from:$('exportFrom').value,to:$('exportTo').value,person:$('exportPerson').value.trim(),equipmentId:$('exportEquipment').value,includeCancelled:$('exportCancelled').checked};
   try{
    if(!filters.from||!filters.to||filters.from>filters.to)throw Error('시작 날짜와 종료 날짜를 올바르게 선택해 주세요.');
    if((Date.parse(filters.to)-Date.parse(filters.from))/86400000>=366)throw Error('한 번에 최대 366일까지 선택해 주세요.');
    $('saveExport').disabled=true;$('exportStatus').textContent='기록을 불러와 엑셀 파일을 만들고 있습니다…';
    const result=await api.exportBookings(filters);
    if(!result.bookings.length){$('exportStatus').textContent='조건에 맞는 예약이 없습니다. 기간이나 검색 조건을 바꿔 주세요.';return;}
-   const {createBookingWorkbook}=await import('./export-xlsx.mjs');
+ const {createBookingWorkbook}=await import('./export-xlsx.mjs');
+ result.filters.order=order;
    const bytes=createBookingWorkbook(result),blob=new Blob([bytes],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}),url=URL.createObjectURL(blob),link=document.createElement('a');
    link.href=url;link.download=`예약기록_${filters.from}_${filters.to}.xlsx`;document.body.append(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),60000);
    $('exportStatus').textContent=`${result.bookings.length.toLocaleString()}건의 파일을 만들었습니다. 브라우저 다운로드 목록에서 확인해 주세요.`;

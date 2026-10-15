@@ -59,10 +59,10 @@ function createRepository(filename, { seed = true } = {}) {
     const f=exportInput(input);
     const rows=db.prepare(`SELECT b.*,e.name equipment_name,e.category FROM bookings b JOIN equipment e ON e.id=b.equipment_id
       WHERE b.start_ms<? AND b.end_ms>? AND (? OR b.status='active') AND (?='' OR b.equipment_id=?)
-      AND (?='' OR instr(lower(b.person),lower(?))>0) ORDER BY b.start_ms,e.sort_order,b.id LIMIT 20001`)
-      .all(f.end,f.start,+f.includeCancelled,f.equipmentId,f.equipmentId,f.person,f.person);
+      AND (?='' OR e.category=?) AND (?='' OR instr(lower(b.person),lower(?))>0) ORDER BY b.start_ms,e.sort_order,b.id LIMIT 20001`)
+      .all(f.end,f.start,+f.includeCancelled,f.equipmentId,f.equipmentId,f.category,f.category,f.person,f.person);
     if(rows.length>20000)throw new AppError('예약이 20,000건을 넘습니다. 기간이나 장비 조건을 좁혀 주세요.');
-    return {filters:{from:f.from,to:f.to,person:f.person,equipmentId:f.equipmentId,includeCancelled:f.includeCancelled},generatedAt:new Date().toISOString(),bookings:rows.map(r=>({...bookingRow(r),equipmentName:r.equipment_name,category:r.category,createdAt:r.created_at,updatedAt:r.updated_at}))};
+    return {filters:{from:f.from,to:f.to,person:f.person,equipmentId:f.equipmentId,category:f.category,includeCancelled:f.includeCancelled},generatedAt:new Date().toISOString(),bookings:rows.map(r=>({...bookingRow(r),equipmentName:r.equipment_name,category:r.category,createdAt:r.created_at,updatedAt:r.updated_at}))};
   }
   function saveBooking(input, id = null) {
     const b = bookingInput(input);

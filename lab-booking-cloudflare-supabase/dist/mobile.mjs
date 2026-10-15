@@ -1,4 +1,5 @@
 // The timetable alone zooms; navigation keeps its normal touch-target size.
+import {createLongPress} from './press.mjs';
 export const clampScale=(value,min)=>Math.max(min,Math.min(3,value));
 export function pinchView(start,distance,center,min){
  const scale=clampScale(start.scale*distance/Math.max(1,start.distance),min);
@@ -25,7 +26,7 @@ export function setupMobileBoard({getDay}){
  tools.addEventListener('close',()=>layout.prepend(aside));
  $('closeMobileTools').onclick=()=>tools.close();$('compactSearch').onclick=$('compactDate').onclick=openTools;
  tools.addEventListener('click',e=>{if(e.target.closest('#calendar button,.day-nav button'))tools.close();});
- $('day').addEventListener('change',()=>{if(tools.open)tools.close();});
+ $('day').addEventListener('dayapplied',()=>{if(tools.open)tools.close();});
  more.onclick=()=>{$('mobileNoticeText').textContent=document.querySelector('.notice').textContent;menu.showModal();};
  $('closeMobileMenu').onclick=()=>menu.close();
  $('menuRecords').onclick=()=>{menu.close();$('exportRecords').click();};$('menuRefresh').onclick=()=>{menu.close();$('refresh').click();};
@@ -50,6 +51,11 @@ export function setupMobileBoard({getDay}){
  $('normalSize').onclick=()=>{fit=false;scale=1;day=null;applyZoom();};
  new ResizeObserver(applyZoom).observe(board);
  const points=new Map();let gesture=null,suppressClick=0,manualClick=false;
+ const press=createLongPress({onHold:point=>{
+  table.querySelectorAll('.track').forEach(t=>t.dispatchEvent(new Event('gesturecancel')));
+  gesture={kind:'hold'};capture(point.id);suppressClick=performance.now()+1000;
+  point.target.dispatchEvent(new Event('bookinghold'));
+ }});
  const block=e=>{e.preventDefault();e.stopImmediatePropagation();};
  const position=e=>({x:e.clientX,y:e.clientY});
  const pair=()=>{const [a,b]=[...points.values()];return {distance:Math.hypot(a.x-b.x,a.y-b.y),center:{x:(a.x+b.x)/2,y:(a.y+b.y)/2}};};
@@ -59,20 +65,25 @@ export function setupMobileBoard({getDay}){
   if(!mobile.matches||e.pointerType!=='touch')return;
   points.set(e.pointerId,position(e));
   if(points.size>=2){
+   press.cancel();
    // A second finger cancels any in-progress selection/move before zooming.
    table.querySelectorAll('.track').forEach(t=>t.dispatchEvent(new Event('gesturecancel')));
    for(const id of points.keys())capture(id);
    const p=pair(),c=relative(p.center);gesture={kind:'pinch',scale,distance:p.distance,anchorX:(board.scrollLeft+c.x)/scale,anchorY:(board.scrollTop+c.y)/scale};
    block(e);return;
   }
+  const reservation=e.target.closest('.reservation');
+  if(reservation)press.start({id:e.pointerId,...position(e),target:reservation});
   if(board.classList.contains('touch-select')&&e.target.closest('.slot,.reservation')){gesture={kind:'select'};return;}
   gesture={kind:'pan',...position(e),left:board.scrollLeft,top:board.scrollTop,target:e.target,moved:false};capture(e.pointerId);block(e);
  },true);
  board.addEventListener('pointermove',e=>{
   if(!points.has(e.pointerId)||!gesture)return;points.set(e.pointerId,position(e));
+  press.move({id:e.pointerId,...position(e)});
   if(gesture.kind==='pinch'){
    if(points.size>=2){const p=pair(),v=pinchView(gesture,p.distance,relative(p.center),minScale());scale=v.scale;fit=false;table.style.zoom=String(scale);board.scrollLeft=v.left;board.scrollTop=v.top;decorate();}
    block(e);
+  }else if(gesture.kind==='hold'){block(e);
   }else if(gesture.kind==='pan'){
    const dx=e.clientX-gesture.x,dy=e.clientY-gesture.y;gesture.moved ||= Math.hypot(dx,dy)>6;
    if(gesture.moved){board.scrollLeft=gesture.left-dx;board.scrollTop=gesture.top-dy;}block(e);
@@ -80,6 +91,7 @@ export function setupMobileBoard({getDay}){
  },true);
  function finish(e){
   if(!points.has(e.pointerId))return;points.delete(e.pointerId);
+  press.end(e.pointerId);
   if(gesture?.kind!=='select'){
    block(e);suppressClick=performance.now()+600;
    if(gesture?.kind==='pan'&&!gesture.moved&&e.type==='pointerup'){
@@ -91,7 +103,7 @@ export function setupMobileBoard({getDay}){
  }
  board.addEventListener('pointerup',finish,true);board.addEventListener('pointercancel',finish,true);
  board.addEventListener('click',e=>{if(!manualClick&&performance.now()<suppressClick){e.preventDefault();e.stopImmediatePropagation();}},true);
- const reset=()=>{points.clear();gesture=null;};window.addEventListener('blur',reset);
+ const reset=()=>{press.cancel();points.clear();gesture=null;};window.addEventListener('blur',reset);
  mobile.addEventListener('change',()=>{reset();if(tools.open)tools.close();if(menu.open)menu.close();day=null;scale=1;fit=false;applyZoom();});
  return {applyZoom};
 }
