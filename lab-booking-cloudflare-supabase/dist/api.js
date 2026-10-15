@@ -10,4 +10,5 @@ async function request(url,method='GET',data){
 }
 const localApi={state:day=>request('/state?date='+encodeURIComponent(day)),saveBooking:(data,id)=>request('/bookings'+(id?'/'+id:''),id?'PUT':'POST',data),cancelBooking:(id,version)=>request('/bookings/'+id,'DELETE',{version}),saveEquipment:(data,id)=>request('/equipment'+(id?'/'+id:''),id?'PUT':'POST',data),reorder:ids=>request('/equipment/reorder','POST',{ids})};
 export const api=config.storage==='supabase'?supabaseApi:localApi;
+localApi.exportPeople=filters=>request('/export-people?'+new URLSearchParams(filters));
 localApi.exportBookings=filters=>request('/export?'+new URLSearchParams(filters));

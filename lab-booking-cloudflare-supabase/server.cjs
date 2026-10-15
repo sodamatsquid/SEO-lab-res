@@ -20,6 +20,7 @@ function createApp({dbPath=path.join(__dirname,'data','lab-booking.sqlite'),seed
       res.setHeader('X-Content-Type-Options','nosniff');res.setHeader('X-Frame-Options','DENY');
       const url=new URL(req.url,'http://'+host), route=url.pathname,method=req.method;
       if(route==='/api/health')return json(res,200,{ok:true,mode:'local-sqlite',timezone:'Asia/Seoul'});
+      if(route==='/api/export-people'&&method==='GET')return json(res,200,repo.exportPeople(Object.fromEntries(url.searchParams)));
       if(route==='/api/export'&&method==='GET')return json(res,200,repo.exportBookings(Object.fromEntries(url.searchParams)));
       if(route==='/api/state'&&method==='GET')return json(res,200,{equipment:repo.equipment(),bookings:repo.bookings(url.searchParams.get('date')||today()),today:today()});
       if(route==='/api/bookings'&&method==='POST')return json(res,201,repo.saveBooking(await body(req)));

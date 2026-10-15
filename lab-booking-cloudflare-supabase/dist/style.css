@@ -154,3 +154,19 @@ footer{padding-top:8px}.mobile-help{display:none}
 #bookingMenu.touch-menu button{min-height:48px;font-size:16px;border-radius:9px;padding:12px}#bookingMenu.touch-menu .menu-caption{font-size:14px;padding:6px 12px 12px;max-height:70px}
 .recent-colors{display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin:10px 0 13px;font-size:12px;color:#79658c}.recent-colors[hidden]{display:none}#recentColors{display:flex;gap:6px}#recentColors .swatch{width:28px;height:28px;border-radius:7px}#clearRecentColors{font-size:11px;border:0;background:transparent;padding:6px;color:#8a7598;text-decoration:underline;text-underline-offset:3px}
 @media(max-width:680px){.booking-detail{padding:0}.booking-detail .info-content{padding:18px 20px 22px}.booking-detail .info-help{font-size:12px}.info-close{width:40px;height:40px}#recentColors .swatch{width:32px;height:32px}}
+
+/* 2026-10-15: compact preview and persistent touch actions. */
+.day-input{display:grid;grid-template-columns:minmax(0,1fr) 44px;gap:6px;align-items:stretch}
+.day-input input{width:100%;font-variant-numeric:tabular-nums}.day-input button{padding:0;font-size:12px;white-space:nowrap}
+.day-help{font-size:10px;margin:7px 0 0;line-height:1.5}
+.field-help{font-size:11px;line-height:1.5;color:#887893;margin:6px 0 0}#exportPerson{margin-top:8px}
+@media(min-width:681px){.schedule .list-filters{display:none!important}}
+.booking-tooltip{width:280px;border:1px solid #cfc0dc;border-radius:11px;box-shadow:0 7px 24px #35224326;max-height:calc(100dvh - 20px)}
+.hover-content{padding:13px 15px}.hover-equipment{color:#80698e;font-size:11px;font-weight:600;line-height:1.5}
+.hover-person{display:block;font-size:16px;line-height:1.4;margin-top:5px;color:#392b44}.hover-title{margin:4px 0 0;font-size:13px;line-height:1.5;white-space:pre-wrap}
+.hover-times{border-top:1px solid #eee6f3;margin-top:10px;padding-top:9px;display:grid;gap:3px}
+.hover-date{font-size:11px;color:#86748f}.hover-clock{font-size:15px;font-variant-numeric:tabular-nums;line-height:1.5;letter-spacing:.2px}
+.hover-duration{font-size:11px;color:#887793;margin:4px 0 0}.hover-help{font-size:10px;color:#9988a3;margin:10px 0 0}
+.hover-memo{font-size:12px;line-height:1.5;white-space:pre-wrap;margin:9px 0 0;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+#bookingMenu #menuClose{display:none}#bookingMenu.touch-menu #menuClose{display:block;position:absolute;right:12px;top:10px;width:36px;min-height:36px;height:36px;text-align:center;font-size:24px;padding:0;background:#f7f3fa;border-radius:50%}
+#bookingMenu.touch-menu .menu-caption{padding-right:44px;min-height:38px}

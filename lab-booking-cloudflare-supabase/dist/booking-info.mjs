@@ -1,5 +1,23 @@
 import {toMs} from './core.mjs';
 import {createLongPress} from './press.mjs';
+export function setupPersistentMenu(menu,root=document){
+ let touch=false,armed=false;
+ const close=()=>{menu.hidePopover();armed=false;};
+ root.addEventListener('pointerdown',e=>{
+  if(!touch||!menu.matches(':popover-open'))return;
+  if(menu.contains(e.target))armed=true;else close();
+ },true);
+ root.addEventListener('keydown',e=>{if(e.key==='Escape'&&touch&&menu.matches(':popover-open')){e.preventDefault();close();}});
+ menu.addEventListener('click',e=>{
+  if(touch&&e.detail!==0&&!armed){e.preventDefault();e.stopImmediatePropagation();return;}
+  armed=false;
+ },true);
+ return {open(isTouch){close();touch=isTouch;menu.setAttribute('popover',touch?'manual':'auto');menu.showPopover();},close};
+}
+export function tooltipPosition({point,anchor,width,height,viewportWidth,viewportHeight}){
+ const x=point?.x??Math.max(10,anchor.left),y=point?.y??anchor.bottom;
+ return {left:Math.max(10,Math.min(x+(point?12:0),viewportWidth-width-10)),top:Math.max(10,y+height+22<=viewportHeight?y+12:(point?.y??anchor.top)-height-12)};
+}
 const make=(tag,className,text)=>{const e=document.createElement(tag);e.className=className;if(text!==undefined)e.textContent=text;return e;};
 export function bookingTimeInfo(booking){
  const date=value=>new Intl.DateTimeFormat('ko-KR',{year:'numeric',month:'long',day:'numeric',weekday:'short',timeZone:'Asia/Seoul'}).format(new Date(toMs(value)));
@@ -14,6 +32,17 @@ export function setupBookingInfo({getEquipment,onEdit,onMenu}){
  let showTimer,hideTimer,anchor=null,activeListPress=null;
  function hide(){clearTimeout(showTimer);clearTimeout(hideTimer);tooltip.hidePopover();anchor?.removeAttribute('aria-describedby');anchor=null;}
  function content(booking,detail){
+  if(!detail){
+   const body=make('div','hover-content'),time=bookingTimeInfo(booking);
+   body.append(make('div','hover-equipment',getEquipment(booking.equipmentId)?.name||'장비'),make('strong','hover-person',booking.person));
+   if(booking.title)body.append(make('p','hover-title',booking.title));
+   const times=make('div','hover-times');
+   if(time.startDate===time.endDate){times.append(make('span','hover-date',time.startDate),make('strong','hover-clock',time.startTime+' – '+time.endTime));}
+   else{times.append(make('span','hover-date','시작 '+time.startDate),make('strong','hover-clock',time.startTime),make('span','hover-date','종료 '+time.endDate),make('strong','hover-clock',time.endTime));}
+   body.append(times,make('p','hover-duration',time.duration+' · 한국시간'));
+   if(booking.memo)body.append(make('p','hover-memo',booking.memo));
+   body.append(make('p','hover-help','클릭 수정 · 우클릭 메뉴'));return body;
+  }
   const body=make('div','info-content'),head=make('div','info-heading'),equipment=make('span','info-equipment',getEquipment(booking.equipmentId)?.name||'장비');
   head.append(equipment);
   if(detail){const close=make('button','info-close','×');close.type='button';close.setAttribute('aria-label','예약 정보 닫기');close.onclick=()=>sheet.close();head.append(close);}
@@ -26,11 +55,12 @@ export function setupBookingInfo({getEquipment,onEdit,onMenu}){
   body.append(make('p','info-help',detail?'예약 막대를 길게 누르면 수정·삭제할 수 있습니다.':'클릭하여 수정 · 우클릭하여 메뉴 열기'));
   return body;
  }
- function preview(booking,target){
-  hide();anchor=target;tooltip.style.setProperty('--booking-color',booking.color);tooltip.replaceChildren(content(booking,false));tooltip.showPopover();target.setAttribute('aria-describedby',tooltip.id);
-  const r=target.getBoundingClientRect(),w=tooltip.offsetWidth,h=tooltip.offsetHeight;
-  tooltip.style.left=Math.max(10,Math.min(r.left,innerWidth-w-10))+'px';
-  tooltip.style.top=Math.max(10,r.bottom+h+12<innerHeight?r.bottom+9:r.top-h-9)+'px';
+ function place(target,point){
+  const pos=tooltipPosition({point,anchor:target.getBoundingClientRect(),width:tooltip.offsetWidth,height:tooltip.offsetHeight,viewportWidth:innerWidth,viewportHeight:innerHeight});
+  tooltip.style.left=pos.left+'px';tooltip.style.top=pos.top+'px';
+ }
+ function preview(booking,target,point){
+  hide();anchor=target;tooltip.style.setProperty('--booking-color',booking.color);tooltip.replaceChildren(content(booking,false));tooltip.showPopover();target.setAttribute('aria-describedby',tooltip.id);place(target,point);
  }
  function details(booking){hide();sheet.style.setProperty('--booking-color',booking.color);sheet.replaceChildren(content(booking,true));if(!sheet.open)sheet.showModal();}
  tooltip.addEventListener('pointerenter',()=>clearTimeout(hideTimer));tooltip.addEventListener('pointerleave',()=>{hideTimer=setTimeout(hide,120);});
@@ -39,9 +69,10 @@ export function setupBookingInfo({getEquipment,onEdit,onMenu}){
  document.addEventListener('keydown',e=>{if(e.key==='Escape')hide();});
  document.addEventListener('pointerdown',e=>{if(!tooltip.contains(e.target))hide();if(e.pointerType==='touch'&&!e.isPrimary)activeListPress?.cancel();},true);
  function bind(target,booking,{list=false}={}){
-  let lastTouch=false,suppressUntil=0;
+  let lastTouch=false,suppressUntil=0,pointer=null;
   const hold=()=>{hide();onMenu(booking,target.getBoundingClientRect(),true);};
-  target.addEventListener('pointerenter',e=>{if(e.pointerType==='touch'||mobile.matches)return;clearTimeout(hideTimer);showTimer=setTimeout(()=>preview(booking,target),160);});
+  target.addEventListener('pointerenter',e=>{if(e.pointerType==='touch'||mobile.matches||e.buttons)return;pointer={x:e.clientX,y:e.clientY};clearTimeout(hideTimer);showTimer=setTimeout(()=>preview(booking,target,pointer),160);});
+  target.addEventListener('pointermove',e=>{if(e.pointerType==='touch'||mobile.matches||e.buttons)return;pointer={x:e.clientX,y:e.clientY};if(anchor===target)place(target,pointer);});
   target.addEventListener('pointerleave',()=>{clearTimeout(showTimer);hideTimer=setTimeout(hide,120);});
   target.addEventListener('focus',()=>{if(!mobile.matches&&!lastTouch&&target.matches(':focus-visible'))showTimer=setTimeout(()=>preview(booking,target),160);});
   target.addEventListener('blur',hide);

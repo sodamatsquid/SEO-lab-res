@@ -1,6 +1,6 @@
 import {api} from './api.js';
 import {setupFeatures} from './features.js';
-import {setupBookingInfo} from './booking-info.mjs';
+import {setupBookingInfo,setupPersistentMenu} from './booking-info.mjs';
 import {createColorHistory,COLOR_KEY} from './color-history.mjs';
 import {today,shiftDay,minuteLabel,dateTime,clipBooking,textColor,fullTime,toMs,local,normalizeDayInput} from './core.mjs';
 const $=id=>document.getElementById(id);
@@ -10,6 +10,8 @@ let touchSelection=false;
 const mobileScreen=matchMedia('(max-width:680px)');
 const features=setupFeatures({api,getState:()=>state,getDay:()=>selectedDay,toast});
 const bookingInfo=setupBookingInfo({getEquipment:id=>state.equipment.find(e=>e.id===id),onEdit:openBooking,onMenu:openBookingMenu});
+const bookingMenu=setupPersistentMenu($('bookingMenu'));
+$('menuClose').onclick=()=>bookingMenu.close();
 let colorStorage;try{colorStorage=localStorage;}catch{}
 const colorHistory=createColorHistory(colorStorage);
 const dragHelp=()=>mobileScreen.matches?(touchSelection?'빈 칸 드래그로 예약 · 두 손가락으로 확대':'밀어서 이동 · 빈 칸을 누르면 예약'):'빈 칸 드래그: 5분 단위 예약 · 예약 막대 드래그: 이동 · 우클릭: 수정·삭제';
@@ -89,7 +91,7 @@ function enableBookingActions(bar,booking,track){
     requestMove(booking,updated);
   });
   bar.addEventListener('pointercancel',reset);bar.addEventListener('lostpointercapture',reset);
-  track.addEventListener('gesturecancel',reset);
+  bar.addEventListener('gesturecancel',reset);
   bar.addEventListener('click',event=>{if(event.detail!==0&&event.timeStamp-lastMoved<500){event.preventDefault();event.stopImmediatePropagation();}},true);
 }
 function requestMove(original,updated){
@@ -108,6 +110,8 @@ $('confirmMove').onclick=async()=>{
   catch(e){$('moveError').textContent=e.message+'\n이동하지 못했습니다. 기존 예약은 유지됩니다.';}
   finally{$('confirmMove').disabled=false;$('cancelMove').disabled=false;}
 };
+const rowCache=new Map();let renderFrame=0;
+function queueBoardRender(){cancelAnimationFrame(renderFrame);renderFrame=requestAnimationFrame(renderBoard);}
 function renderBoard(){
   bookingInfo.hide();
   const table=$('table'),devices=visibleEquipment(),fragment=document.createDocumentFragment(),axis=el('div','line axis');axis.append(el('div','name','장비 / 시간'));
@@ -119,14 +123,24 @@ function renderBoard(){
     hours.append(tick);
   }
   axis.append(hours);fragment.append(axis);
+  const grouped=new Map();for(const b of state.bookings){if(!grouped.has(b.equipmentId))grouped.set(b.equipmentId,[]);grouped.get(b.equipmentId).push(b);}
+  for(const id of rowCache.keys())if(!state.equipment.some(e=>e.id===id))rowCache.delete(id);
   for(const device of devices){
+    const signature=JSON.stringify(device);let cached=rowCache.get(device.id);
+    if(!cached||cached.signature!==signature){
     const row=el('div','line'),name=el('div','name'+(!device.active?' inactive':''),device.name+(!device.active?' · 중지':''));row.dataset.equipmentId=device.id;name.title=device.name+(device.usageNote?'\n이용 안내: '+device.usageNote:'');row.append(name);
     const track=el('div','track');enableDrag(track,device);
     for(let i=0;i<48;i++){const slot=el('button','slot');slot.setAttribute('aria-label',`${device.name} ${minuteLabel(i*30)} 예약`);slot.disabled=!device.active;slot.onclick=()=>openBooking(null,device.id,i*30);track.append(slot);}
-    for(const b of state.bookings.filter(b=>b.equipmentId===device.id)){
+    track.addEventListener('gesturecancel',()=>track.querySelectorAll('.reservation').forEach(bar=>bar.dispatchEvent(new Event('gesturecancel'))));
+    row.append(track);cached={row,track,signature,bookings:null};rowCache.set(device.id,cached);
+    }
+    const {row,track}=cached,bookings=grouped.get(device.id)||[],key=selectedDay+JSON.stringify(bookings);
+    if(cached.bookings!==key){
+    track.dispatchEvent(new Event('gesturecancel'));track.querySelectorAll('.reservation').forEach(bar=>bar.remove());
+    for(const b of bookings){
       const clip=clipBooking(b,selectedDay);if(!clip)continue;const label=bookingLabel(b),bar=el('button','reservation',(clip.before?'‹ ':'')+label+(clip.after?' ›':''));
       bar.style.left=clip.start/1440*100+'%';bar.style.width=(clip.end-clip.start)/1440*100+'%';bar.style.background=b.color;bar.style.color=textColor(b.color);bar.setAttribute('aria-label',`${label}, ${fullTime(b.start)} ~ ${fullTime(b.end)}, 상세 보기`);bookingInfo.bind(bar,b);enableBookingActions(bar,b,track);track.append(bar);
-    }row.append(track);fragment.append(row);
+    }cached.bookings=key;}fragment.append(row);
   }
   if(!devices.length)fragment.append(el('p','empty','해당하는 장비가 없습니다. 검색어와 종류를 확인해 주세요.'));
   table.replaceChildren(fragment);$('summary').textContent=`장비 ${devices.length}대 / 전체 ${state.equipment.length}대 · 표시된 예약 ${state.bookings.filter(b=>devices.some(d=>d.id===b.equipmentId)).length}건`;
@@ -134,19 +148,24 @@ function renderBoard(){
   features.applyZoom();
 }
 const listFilters=el('details','list-filters');
-listFilters.innerHTML='<summary><span>조건별 보기</span><span id="listFilterSummary">전체 예약</span><span class="filter-chevron" aria-hidden="true">⌄</span></summary><div class="list-filter-fields"><div><label for="listPerson">예약자</label><select id="listPerson"><option value="">전체 예약자</option></select></div><div><label for="listEquipment">장비</label><select id="listEquipment"><option value="">전체 장비</option></select></div><button type="button" id="clearListFilters">조건 초기화</button></div>';
+listFilters.innerHTML='<summary><span>조건별 보기</span><span id="listFilterSummary">전체 예약</span><span class="filter-chevron" aria-hidden="true">⌄</span></summary><div class="list-filter-fields"><div><label for="listPerson">예약자</label><select id="listPerson"><option value="">전체 예약자</option></select></div><div><label for="listCategory">장비 종류</label><select id="listCategory"><option value="">전체 종류</option></select></div><div><label for="listEquipment">장비</label><select id="listEquipment"><option value="">전체 장비</option></select></div><button type="button" id="clearListFilters">조건 초기화</button></div>';
 $('bookingList').before(listFilters);
+function syncListVisibility(){listFilters.hidden=!(mobileScreen.matches&&document.querySelector('.schedule').classList.contains('list-view'));}
+syncListVisibility();mobileScreen.addEventListener('change',syncListVisibility);
 const listStatus=el('div','list-status');listStatus.id='listStatus';listStatus.setAttribute('aria-live','polite');$('bookingList').before(listStatus);
-for(const id of ['listPerson','listEquipment'])$(id).onchange=()=>{bookingInfo.hide();renderBookingList(visibleEquipment());};
-$('clearListFilters').onclick=()=>{$('listPerson').value='';$('listEquipment').value='';renderBookingList(visibleEquipment());};
+for(const id of ['listPerson','listCategory','listEquipment'])$(id).onchange=()=>{bookingInfo.hide();renderBookingList(visibleEquipment());};
+$('clearListFilters').onclick=()=>{$('listPerson').value='';$('listCategory').value='';$('listEquipment').value='';renderBookingList(visibleEquipment());};
 function renderBookingList(devices){
-  const person=$('listPerson').value,equipment=$('listEquipment').value;
+  const person=$('listPerson').value,category=$('listCategory').value;let equipment=$('listEquipment').value;
+  const categories=[...new Set(state.equipment.map(e=>e.category))];
+  $('listCategory').replaceChildren(new Option('전체 종류',''),...categories.map(c=>new Option(c,c)));$('listCategory').value=category;
+  const eligible=state.equipment.filter(e=>!category||e.category===category);if(!eligible.some(e=>e.id===equipment))equipment='';
   const people=[...new Set(state.bookings.map(b=>b.person))].sort((a,b)=>a.localeCompare(b,'ko'));
   if(person&&!people.includes(person))people.push(person);
   $('listPerson').replaceChildren(new Option('전체 예약자',''),...people.map(p=>new Option(p,p)));$('listPerson').value=person;
-  $('listEquipment').replaceChildren(new Option('전체 장비',''),...state.equipment.map(e=>new Option(e.name,e.id)));$('listEquipment').value=equipment;
-  const visible=state.bookings.filter(b=>devices.some(d=>d.id===b.equipmentId)&&(!person||b.person===person)&&(!equipment||b.equipmentId===equipment)).sort((a,b)=>a.start.localeCompare(b.start));
-  const captions=[person,equipment?state.equipment.find(e=>e.id===equipment)?.name:''].filter(Boolean);
+  $('listEquipment').replaceChildren(new Option('전체 장비',''),...eligible.map(e=>new Option(e.name,e.id)));$('listEquipment').value=equipment;
+  const visible=state.bookings.filter(b=>devices.some(d=>d.id===b.equipmentId)&&eligible.some(d=>d.id===b.equipmentId)&&(!person||b.person===person)&&(!equipment||b.equipmentId===equipment)).sort((a,b)=>a.start.localeCompare(b.start));
+  const captions=[person,category,equipment?state.equipment.find(e=>e.id===equipment)?.name:''].filter(Boolean);
   $('listFilterSummary').textContent=captions.join(' · ')||'전체 예약';listFilters.classList.toggle('has-filter',captions.length>0);
   listStatus.textContent=`예약 ${visible.length}건 · ${$('search').value||$('category').value?'장비 검색 조건 적용 중':'선택한 날짜'} · 길게 눌러 수정·삭제`;
   const cards=visible.map(b=>{
@@ -170,7 +189,7 @@ $('toggleTools').onclick=()=>{
   $('toggleTools').textContent=open?'날짜 · 장비 찾기 ▴':'날짜 · 장비 찾기 ▾';
 };
 for(const [id,list] of [['timelineView',false],['listView',true]])$(id).onclick=()=>{
-  document.querySelector('.schedule').classList.toggle('list-view',list);
+  document.querySelector('.schedule').classList.toggle('list-view',list);syncListVisibility();
   $('timelineView').setAttribute('aria-pressed',String(!list));$('listView').setAttribute('aria-pressed',String(list));
 };
 $('mobilePrev').onclick=()=>setDay(shiftDay(selectedDay,-1));$('mobileNext').onclick=()=>setDay(shiftDay(selectedDay,1));$('mobileToday').onclick=()=>setDay(today());
@@ -206,12 +225,12 @@ function openBookingMenu(booking,point,touch=false){
   bookingInfo.hide();contextBooking={...booking};const menu=$('bookingMenu');
   menu.classList.toggle('touch-menu',touch);$('menuEdit').textContent='예약 수정';$('menuDelete').hidden=!canEdit(booking);
   let caption=$('bookingMenuCaption');if(!caption){caption=el('p','menu-caption');caption.id='bookingMenuCaption';menu.prepend(caption);}
-  caption.textContent=bookingLabel(booking);menu.style.left=Math.max(8,Math.min(point.left,innerWidth-190))+'px';menu.style.top=Math.max(8,Math.min(point.bottom,innerHeight-170))+'px';menu.showPopover();
+  caption.textContent=bookingLabel(booking);menu.style.left=Math.max(8,Math.min(point.left,innerWidth-190))+'px';menu.style.top=Math.max(8,Math.min(point.bottom,innerHeight-170))+'px';bookingMenu.open(touch);
 }
 $('remove').onclick=()=>{if(editing)requestCancellation(editing);};
 $('keepBooking').onclick=()=>$('confirmModal').close();
-$('menuEdit').onclick=()=>{$('bookingMenu').hidePopover();if(contextBooking)openBooking(contextBooking);};
-$('menuDelete').onclick=()=>{$('bookingMenu').hidePopover();if(contextBooking&&canEdit(contextBooking))requestCancellation(contextBooking);};
+$('menuEdit').onclick=()=>{bookingMenu.close();if(contextBooking)openBooking(contextBooking);};
+$('menuDelete').onclick=()=>{bookingMenu.close();if(contextBooking&&canEdit(contextBooking))requestCancellation(contextBooking);};
 $('confirmCancel').onclick=async()=>{if(!editing)return;$('confirmCancel').disabled=true;try{await api.cancelBooking(editing.id,editing.version);$('confirmModal').close();$('modal').close();await refresh();toast('예약을 취소했습니다.');}catch(e){$('cancelError').textContent=e.message;}finally{$('confirmCancel').disabled=false;}};
 function editEquipment(device=null){editingEquipment=device?.id||null;$('equipmentForm').reset();$('equipmentTitle').textContent=device?'장비 수정':'장비 추가';$('equipmentName').value=device?.name||'';$('equipmentCategory').value=device?.category||'';$('equipmentOrder').value=device?.sortOrder||Math.max(0,...state.equipment.map(e=>e.sortOrder))+1;$('equipmentActive').checked=device?.active??true;$('equipmentNote').value=device?.usageNote||'';$('equipmentError').textContent='';}
 function renderManager(){
@@ -225,7 +244,7 @@ $('equipmentForm').onsubmit=async event=>{event.preventDefault();$('equipmentErr
 $('newEquipment').onclick=()=>{editEquipment();$('equipmentName').focus();};$('closeManager').onclick=()=>$('manager').close();
 $('device').onchange=deviceNote;$('color').oninput=updateColor;$('person').oninput=updateColor;$('title').oninput=updateColor;$('cancel').onclick=closeBooking;$('closeBooking').onclick=closeBooking;
 $('color').onchange=()=>rememberColor($('color').value);
-$('add').onclick=()=>openBooking();$('refresh').onclick=refresh;$('prev').onclick=()=>setDay(shiftDay(selectedDay,-1));$('next').onclick=()=>setDay(shiftDay(selectedDay,1));$('today').onclick=()=>setDay(today());$('monthPrev').onclick=()=>changeMonth(-1);$('monthNext').onclick=()=>changeMonth(1);$('search').oninput=renderBoard;$('category').onchange=renderBoard;$('showInactive').onchange=renderBoard;
+$('add').onclick=()=>openBooking();$('refresh').onclick=refresh;$('prev').onclick=()=>setDay(shiftDay(selectedDay,-1));$('next').onclick=()=>setDay(shiftDay(selectedDay,1));$('today').onclick=()=>setDay(today());$('monthPrev').onclick=()=>changeMonth(-1);$('monthNext').onclick=()=>changeMonth(1);$('search').oninput=queueBoardRender;$('category').onchange=renderBoard;$('showInactive').onchange=renderBoard;
 for(let n=0;n<=1440;n+=30)$('timeOptions').append(new Option(minuteLabel(n),minuteLabel(n)));
 function swatch(color,name,parent){const button=el('button','swatch');button.type='button';button.style.background=color;button.dataset.color=color;button.title=name;button.setAttribute('aria-label',name);button.onclick=()=>{$('color').value=color;rememberColor(color);$('morePalettePanel').hidePopover();};$(parent).append(button);}
 function rememberColor(color){colorHistory.remember(color);renderRecentColors();updateColor();}

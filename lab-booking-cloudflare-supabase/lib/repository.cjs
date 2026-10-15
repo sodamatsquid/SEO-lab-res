@@ -55,6 +55,12 @@ function createRepository(filename, { seed = true } = {}) {
     const start = parseLocal(date+'T00:00'), end = start+86400000;
     return db.prepare("SELECT * FROM bookings WHERE status='active' AND start_ms<? AND end_ms>? ORDER BY start_ms").all(end,start).map(bookingRow);
   }
+  function exportPeople(input){
+    const f=exportInput(input);
+    return db.prepare(`SELECT DISTINCT b.person FROM bookings b JOIN equipment e ON e.id=b.equipment_id
+      WHERE b.start_ms<? AND b.end_ms>? AND (? OR b.status='active') AND (?='' OR b.equipment_id=?)
+      AND (?='' OR e.category=?) ORDER BY b.person`).all(f.end,f.start,+f.includeCancelled,f.equipmentId,f.equipmentId,f.category,f.category).map(r=>r.person);
+  }
   function exportBookings(input){
     const f=exportInput(input);
     const rows=db.prepare(`SELECT b.*,e.name equipment_name,e.category FROM bookings b JOIN equipment e ON e.id=b.equipment_id
@@ -114,6 +120,6 @@ function createRepository(filename, { seed = true } = {}) {
     const demos=[['eq-2','09:00',date,'12:00','가상 연구원 가','예시 · 산화물 열처리','#cfb8ed'],['eq-8','20:00',tomorrow,'06:00','가상 연구원 나','예시 · 밤샘 질화','#b6d9ef'],['eq-16','14:00',date,'15:30','가상 연구원 다','예시 · 분말 분석','#f1c2d8']];
     demos.forEach(([equipmentId,start,edate,end,person,title,color])=>saveBooking({equipmentId,start:date+'T'+start,end:edate+'T'+end,person,title,color,memo:'실제 예약이 아닌 가상 예시입니다. 자유롭게 수정하거나 취소해도 됩니다.'}));
   }
-  return { equipment,bookings,exportBookings,saveBooking,cancelBooking,saveEquipment,reorderEquipment,close:()=>db.close() };
+  return { equipment,bookings,exportPeople,exportBookings,saveBooking,cancelBooking,saveEquipment,reorderEquipment,close:()=>db.close() };
 }
 module.exports={createRepository,initialEquipment};

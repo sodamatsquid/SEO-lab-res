@@ -33,15 +33,16 @@ export function setupMobileBoard({getDay}){
  $('compactPrev').onclick=()=>$('prev').click();$('compactNext').onclick=()=>$('next').click();$('compactToday').onclick=()=>$('today').click();$('compactAdd').onclick=()=>$('add').click();
  for(const [id,original]of [['compactTimeline','timelineView'],['compactList','listView']])$(id).onclick=()=>{$(original).click();$('compactTimeline').setAttribute('aria-pressed',String(id==='compactTimeline'));$('compactList').setAttribute('aria-pressed',String(id==='compactList'));};
  $('mobileDragToggle').onclick=()=>{const enabled=board.classList.contains('touch-select');$(enabled?'touchScroll':'touchSelect').click();};
- let scale=1,day=null,fit=false;
+ let scale=1,day=null,fit=false,denseMode=null,decoratedAxis=null,dateLabelDay=null;
+ const dateFormatter=new Intl.DateTimeFormat('ko-KR',{month:'long',day:'numeric',weekday:'short',timeZone:'Asia/Seoul'});
  const minScale=()=>Math.min(1,board.clientWidth/1030);
  function decorate(){
-  const dense=mobile.matches&&scale<.7;table.classList.toggle('zoom-overview',dense);
-  table.querySelectorAll('.hours span').forEach((tick,h)=>tick.hidden=dense?h%4!==0:false);
+  const dense=mobile.matches&&scale<.7,axis=table.querySelector('.hours');
+  if(denseMode!==dense||decoratedAxis!==axis){table.classList.toggle('zoom-overview',dense);axis?.querySelectorAll('span').forEach((tick,h)=>tick.hidden=dense?h%4!==0:false);denseMode=dense;decoratedAxis=axis;}
   $('fitDay').hidden=fit;$('normalSize').hidden=!fit;
  }
  function applyZoom(){
-  $('compactDate').textContent=new Intl.DateTimeFormat('ko-KR',{month:'long',day:'numeric',weekday:'short',timeZone:'Asia/Seoul'}).format(new Date(getDay()+'T00:00:00+09:00'));
+  if(dateLabelDay!==getDay()){dateLabelDay=getDay();$('compactDate').textContent=dateFormatter.format(new Date(dateLabelDay+'T00:00:00+09:00'));}
   if(!board.clientWidth)return;
   if(!mobile.matches){scale=1;fit=false;table.style.zoom='';table.style.width='100%';table.style.minWidth='0';board.scrollLeft=0;decorate();return;}
   table.style.width='1030px';table.style.minWidth='0';if(fit)scale=minScale();table.style.zoom=String(scale);decorate();
